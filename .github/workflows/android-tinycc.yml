@@ -154,7 +154,7 @@ jobs:
     name: Android APK targetSdk35 JNI libtcc app sandbox
     needs: android-tcc-cross
     runs-on: ubuntu-24.04
-    continue-on-error: true
+    # Required: app-process JNI and ET_REL sandbox checks must actually pass.
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
