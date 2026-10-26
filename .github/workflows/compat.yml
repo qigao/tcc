@@ -148,6 +148,23 @@ jobs:
           New-Item -ItemType Directory -Force tools/obfus | Out-Null
           Invoke-WebRequest 'https://raw.githubusercontent.com/DosX-dev/obfus.h/52c971a8270e3dd27f3c4fba9f464150b63bf021/include/obfus.h' -OutFile tools/obfus/obfus.h
           ./scripts/windows-interop.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -TinyCCExe $tcc.FullName -RATLRoot (Resolve-Path tools/ratl).Path -ObfusHeader (Resolve-Path tools/obfus/obfus.h).Path
+      - name: Windows native TinyCC x64 C11 stdatomic contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tcc = Get-ChildItem tools/tinycc-win -Recurse -Filter tcc.exe | Select-Object -First 1
+          if (-not $tcc) { throw 'Pinned native TinyCC x64 missing' }
+          New-Item -ItemType Directory -Force build-c11-tcc | Out-Null
+          & $tcc.FullName '-std=c11' 'tests/c11/atomic_scalar.c' '-o' 'build-c11-tcc/atomic_scalar.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'TinyCC native C11 scalar compile failed' }
+          & $tcc.FullName '-std=c11' '-Iinclude' 'src/threads/threads.c' 'tests/c11/atomic_concurrent.c' '-o' 'build-c11-tcc/atomic_concurrent.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'TinyCC native C11 concurrent compile failed' }
+          for ($i = 0; $i -lt 5; ++$i) {
+            & ./build-c11-tcc/atomic_scalar.exe
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC C11 scalar runtime failed: $LASTEXITCODE" }
+            & ./build-c11-tcc/atomic_concurrent.exe
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC C11 concurrent runtime failed: $LASTEXITCODE" }
+          }
       - name: Windows ARM64 TinyCC and llvm-mingw required PE compile (no runtime)
         shell: pwsh
         run: |

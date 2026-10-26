@@ -68,6 +68,17 @@ jobs:
           for test in atomic32_test atomic_small_test atomic64_test thread_contract; do
             for i in 1 2 3 4 5; do "./build-macos/$test"; done
           done
+      - name: Native TinyCC C11 stdatomic scalar/concurrency contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          TCC="$GITHUB_WORKSPACE/tools/tcc-installed/bin/tcc"
+          "$TCC" -std=c11 tests/c11/atomic_scalar.c -o build-macos/c11_atomic_scalar
+          "$TCC" -std=c11 -Iinclude src/threads/threads.c \
+            tests/c11/atomic_concurrent.c -o build-macos/c11_atomic_concurrent
+          for test in c11_atomic_scalar c11_atomic_concurrent; do
+            for i in 1 2 3 4 5; do "./build-macos/$test"; done
+          done
       - name: Hardened Runtime ad-hoc signing and strict dylib load (required)
         shell: bash
         run: |
