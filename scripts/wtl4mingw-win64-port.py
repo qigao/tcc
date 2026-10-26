@@ -225,6 +225,16 @@ for letter in ("W", "A"):
         s = change(s, source, dest)
 controls.write_text(s, encoding="utf-8")
 
+# MinGW's modern <tchar.h> already typedefs _TUCHAR correctly for
+# the current compilation mode. WTL8's preprocessor '#ifndef _TUCHAR'
+# does not test for a typedef, and its unconditional wchar_t replacement
+# conflicts with the actual CRT type (unsigned char in ANSI builds).
+misc = root / "wtl/include/atlmisc.h"
+s = misc.read_text(encoding="utf-8")
+s = change(s, "#ifndef _TUCHAR\\ntypedef wchar_t     _TUCHAR;\\n#endif",
+           "// Use _TUCHAR from modern MinGW CRT <tchar.h>; do not redeclare.")
+misc.write_text(s, encoding="utf-8")
+
 # WTL8's RichEdit font-dialog template derives from a dependent base.
 # Clang correctly requires this-> for inherited members and methods.
 # Scope this textual adaptation to the exact affected template only.
@@ -233,10 +243,16 @@ s = dialogs.read_text(encoding="utf-8")
 start = s.index("// -----------------Add by Mao yongjun 2008.02.25")
 end = s.index("#ifndef __ATLCOM_H__", start)
 s = s[:start] + """// Old WTL8 SDK type redeclarations omitted: current <commdlg.h>
- // and <shlobj.h> define NMOBJECTNOTIFY and IPrintDialogCallback.
+// and <shlobj.h> provide the native structures and COM interfaces.
+#if (_WIN32_IE >= 0x0400)
 #ifndef PSN_GETOBJECT
 #define PSN_GETOBJECT (PSN_FIRST-10)
 #endif
+#endif
+// Important: preserve the original feature guard around the remaining
+// IObjectWithSiteImpl and property sheet helper declarations. Its matching
+// #endif appears after those definitions in the upstream header.
+#if (_WIN32_IE >= 0x0500)
 #ifndef PSN_TRANSLATEACCELERATOR
 #define PSN_TRANSLATEACCELERATOR (PSN_FIRST-12)
 #endif
