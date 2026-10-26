@@ -1,0 +1,270 @@
+name: WTL10 + OpenATL native llvm-mingw interoperability
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  wtl10-windows-cross:
+    name: OpenATL/WTL10 x64 runtime and ARM64 cross-build
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SHA256 pinned llvm-mingw 20261020
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://github.com/mstorsjo/llvm-mingw/releases/download/20261020/llvm-mingw-20261020-ucrt-x86_64.zip'
+          Invoke-WebRequest -Uri $url -OutFile llvm-mingw.zip
+          $sha = (Get-FileHash llvm-mingw.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne 'fd5462b7f5d93b2ff981fcd3f9c7e427e47f3203c64ea91c27bcc444eebd74cd') { throw "Pinned llvm-mingw mismatch: $sha" }
+          Expand-Archive llvm-mingw.zip -DestinationPath tools/llvm -Force
+          $clang = Get-ChildItem tools/llvm -Recurse -Filter x86_64-w64-mingw32-clang++.exe | Select-Object -First 1
+          if (-not $clang) { throw 'Clang++ missing' }
+          "LLVM_MINGW_BIN=$($clang.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Install pinned Windows TinyCC x64/ARM64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://github.com/DosX-dev/TinyCC-builder/releases/download/2026-10-22/tinycc-windows-2026-10-22.zip'
+          Invoke-WebRequest -Uri $url -OutFile tinycc.zip
+          $sha = (Get-FileHash tinycc.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne '19990b71f401068306ad699aa80af4afaf7f1a7a0110e791022b99da4cbd92e0') { throw "Pinned TinyCC mismatch: $sha" }
+          Expand-Archive tinycc.zip -DestinationPath tools/tinycc-win -Force
+          $tcc64 = Get-ChildItem tools/tinycc-win -Recurse -Filter tcc.exe | Select-Object -First 1
+          $tccArm = Get-ChildItem tools/tinycc-win -Recurse -Filter arm64-win32-tcc.exe | Select-Object -First 1
+          if (-not $tcc64 -or -not $tccArm) { throw 'Pinned TinyCC x64/ARM64 missing' }
+          "POC_TCC64=$($tcc64.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "POC_TCCARM=$($tccArm.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Exact WTL10 release and OpenATL C++17 DLL into TinyCC C
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-wtl10-openatl.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -TinyCC64 $env:POC_TCC64 -TinyCCArm $env:POC_TCCARM
+          if ($LASTEXITCODE -ne 0) { throw 'WTL10/OpenATL x64/ARM64 test failed' }
+      - name: Comprehensive WTL10/wtltest SDI compilation (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $inc = Get-ChildItem tools/wtl10 -Recurse -Filter atlapp.h | Where-Object {
+            $_.FullName -match '[\\/]include[\\/]atlapp\.h$'
+          } | Select-Object -First 1
+          if (-not $inc) { throw 'Missing actual WTL10 include dir' }
+          $include = $inc.Directory.FullName
+          $atl = (Resolve-Path tools/wtl10-openatl/include).Path
+          $wtltest = (Resolve-Path tools/wtl10-test).Path
+          foreach ($cpu in @('x86_64','aarch64')) {
+            $cxx = Join-Path $env:LLVM_MINGW_BIN "$cpu-w64-mingw32-clang++.exe"
+            $args_ = @('-fsyntax-only','-std=c++17','-DUNICODE','-D_UNICODE',
+              '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
+              "-I$atl","-I$include","-I$wtltest",(Join-Path $wtltest 'main.cpp'))
+            & $cxx @args_
+            if ($LASTEXITCODE -ne 0) { throw "WTL10 SDI sample compile failed: $cpu" }
+          }
+          Write-Host 'WTL10 SDI, controls and dialogs sample C++17 compiled on x64/ARM64'
+      - name: Link complete resource-based WTL10 SDI x64/ARM64 (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = (Resolve-Path tools/wtl10-test).Path
+          $atl = (Resolve-Path tools/wtl10-openatl/include).Path
+          $header = Get-ChildItem tools/wtl10 -Recurse -Filter atlapp.h | Where-Object {
+            $_.Directory.Name -ieq 'Include'
+          } | Select-Object -First 1
+          if (-not $header) { throw 'Missing WTL10 release headers' }
+          $wtl = $header.Directory.FullName
+          if (!(Test-Path (Join-Path $app 'wtltest.rc'))) { throw 'Missing upstream resource' }
+          foreach ($cpu in @('x86_64','aarch64')) {
+            $cxx = Join-Path $env:LLVM_MINGW_BIN "$cpu-w64-mingw32-clang++.exe"
+            $rc = Join-Path $env:LLVM_MINGW_BIN "$cpu-w64-mingw32-windres.exe"
+            if (!(Test-Path $cxx) -or !(Test-Path $rc)) { throw "Missing pinned C++ or resource driver: $cpu" }
+            $obj = "build-wtl10/wtltest_$cpu.res.o"
+            $exe = "build-wtl10/wtltest_$cpu.exe"
+            & $rc '-i' (Join-Path $app 'wtltest.rc') '-I' $app '-O' 'coff' '-o' $obj
+            if ($LASTEXITCODE -ne 0) { throw "Resource compiler failed: $cpu" }
+            $argv = @('-std=c++17','-DUNICODE','-D_UNICODE','-municode','-mwindows',
+              '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
+              "-I$atl","-I$wtl","-I$app",(Join-Path $app 'main.cpp'),$obj,
+              '-o',$exe,'-static','-lole32','-loleaut32','-luuid','-lcomctl32',
+              '-lmsimg32','-luxtheme','-lgdi32','-lcomdlg32','-lshell32',
+              '-lshlwapi','-ldwmapi','-luser32')
+            & $cxx @argv
+            if ($LASTEXITCODE -ne 0) { throw "WTL10 SDI link failed: $cpu" }
+            python tests/wtl10/verify_pe_machine.py $exe $cpu --require-resources
+            if ($LASTEXITCODE -ne 0) { throw "PE resource verifier failed: $cpu" }
+          }
+          Write-Host 'WTL10 complete SDI+RC Windows PE x64/ARM64 linked, GUI execution separately gated'
+      - name: Upload WTL10 resource-linked GUI
+        uses: actions/upload-artifact@v4
+        with:
+          name: wtl10-full-sdi-pe
+          path: |
+            build-wtl10/wtltest_*.exe
+            build-wtl10/wtltest_*.res.o
+          if-no-files-found: error
+      - name: Real WTL10 window/message/dialog W^X runtime x64 and ARM64 compile (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-wtl10-gui.ps1 -LLVMRoot $env:LLVM_MINGW_BIN
+          if ($LASTEXITCODE -ne 0) { throw 'WTL10 native GUI smoke build/runtime failed' }
+      - name: ATL COM P0 OpenATL/RATL x64 native + OpenATL ARM64 cross-build (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-atl-com-conformance.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
+          if ($LASTEXITCODE -ne 0) { throw 'Required ATL COM P0 conformance failed' }
+      - name: OpenATL COM P1 factory, rollback and temporary class activation (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-atl-com-p1.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
+          if ($LASTEXITCODE -ne 0) { throw 'OpenATL COM P1 native x64 runtime failed' }
+      - name: OpenATL COM P1-B automatic object map and failure rollback x64/ARM64 (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-atl-com-p1b.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
+          if ($LASTEXITCODE -ne 0) { throw 'OpenATL P1-B object map x64 runtime failed' }
+      - name: OpenATL P1-C isolated HKCR redirect and sandbox cleanup x64/ARM64 (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-atl-registry-sandbox.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
+          if ($LASTEXITCODE -ne 0) { throw 'ATL P1-C registry sandbox qualification failed' }
+      - name: OpenATL P1-C sandbox-authorized real registration and rollback (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-atl-com-p1c.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
+          if ($LASTEXITCODE -ne 0) { throw 'OpenATL P1-C real registry sandbox test failed' }
+      - name: Independent RATL COM P1 and statreg RGS x64 native (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-atl-com-ratl-p1.ps1 -LLVMRoot $env:LLVM_MINGW_BIN
+          if ($LASTEXITCODE -ne 0) { throw 'RATL P1 x64 independent conformance failed' }
+      - name: RATL P1-D nested RGS original-vs-patched x64 regression (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-atl-ratl-nested.ps1 -LLVMRoot $env:LLVM_MINGW_BIN
+          if ($LASTEXITCODE -ne 0) { throw 'RATL P1-D native x64 nested RGS regression failed' }
+      - name: Save WTL10 provenance for native ARM64 runner
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wtl10-openatl-arm64-runtime
+          path: |
+            build-wtl10/poc_openatl_wtl10_arm64.dll
+            build-wtl10/wtl10_client_arm64.exe
+            build-wtl10/wtl10_gui_runtime_aarch64.exe
+            build-wtl10/atl_com_openatl_arm64.exe
+            build-wtl10/atl_com_p1_openatl_arm64.exe
+            build-wtl10/atl_com_p1b_openatl_arm64.exe
+            build-wtl10/atl_registry_sandbox_arm64.exe
+            build-wtl10/atl_p1c_registrar_arm64.exe
+            build-wtl10/manifest.json
+          if-no-files-found: error
+
+  wtl10-arm64-native:
+    name: OpenATL + WTL10 TinyCC C ABI actual Windows ARM64
+    needs: wtl10-windows-cross
+    if: needs.wtl10-windows-cross.result == 'success'
+    runs-on: windows-11-vs2026-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wtl10-openatl-arm64-runtime
+          path: wtl10-arm64
+      - name: Verify PE machine and SHA-256 and execute
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ne 'Arm64') { throw 'Native Windows ARM64 runner required' }
+          $manifest = Get-Content wtl10-arm64/manifest.json -Raw | ConvertFrom-Json -AsHashtable
+          foreach ($filename in @('poc_openatl_wtl10_arm64.dll','wtl10_client_arm64.exe','wtl10_gui_runtime_aarch64.exe','atl_com_openatl_arm64.exe','atl_com_p1_openatl_arm64.exe','atl_com_p1b_openatl_arm64.exe','atl_registry_sandbox_arm64.exe','atl_p1c_registrar_arm64.exe')) {
+            $path = (Resolve-Path "wtl10-arm64/$filename").Path
+            [byte[]]$raw = [IO.File]::ReadAllBytes($path)
+            if ($raw.Length -lt 128) { throw "Tiny PE: $filename" }
+            $pe = [BitConverter]::ToInt32($raw, 0x3c)
+            if ($pe -lt 64 -or $pe + 6 -ge $raw.Length -or
+                [BitConverter]::ToUInt16($raw, $pe + 4) -ne 0xAA64) { throw "Not ARM64 PE: $filename" }
+            $sha = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($sha -ne $manifest[$filename]) { throw "ARM64 provenance mismatch: $filename" }
+          }
+          Push-Location wtl10-arm64
+          try {
+            for ($i = 1; $i -le 5; $i++) {
+              & ./wtl10_client_arm64.exe poc_openatl_wtl10_arm64.dll
+              if ($LASTEXITCODE -ne 0) { throw "Native ARM64 WTL10 ABI failed run $i" }
+            }
+          } finally { Pop-Location }
+          for ($i = 1; $i -le 5; $i++) {
+            & ./wtl10-arm64/wtl10_gui_runtime_aarch64.exe
+            if ($LASTEXITCODE -ne 0) { throw "WTL10 actual ARM64 CWindowImpl/dialog runtime failed repetition $i" }
+          }
+          $expectedCOM = 'ATL_COM_P0_OK identity=1 map=1 qi_errors=1 refs=0 comptr=1 bstr=1 variant=1'
+          for ($i = 1; $i -le 5; $i++) {
+            $oa = @(& ./wtl10-arm64/atl_com_openatl_arm64.exe 2>&1)
+            $oaRC = $LASTEXITCODE
+            $oaText = ($oa | ForEach-Object { "$_".Trim() }) -join ''
+            if ($oaRC -ne 0 -or $oaText -cne $expectedCOM) {
+              throw "Native ARM64 OpenATL COM P0 failed run $i exit $oaRC : $oaText"
+            }
+          }
+          Write-Host 'Native ARM64 OpenATL COM P0 contract 5/5 PASS; RATL ARM64 PSEH3 remains unqualified'
+          $expectedP1 = 'ATL_COM_P1_OK create=1 rollback=1 factory=1 nonagg=1 locks=1 running=1 revoke=1 registry_failclosed=1'
+          for ($i = 1; $i -le 5; $i++) {
+            $out = @(& ./wtl10-arm64/atl_com_p1_openatl_arm64.exe 2>&1)
+            $code = $LASTEXITCODE
+            $observed = ($out | ForEach-Object { "$_".Trim() }) -join ''
+            if ($code -ne 0 -or $observed -cne $expectedP1) {
+              throw "Native OpenATL COM P1 ARM64 failed run $i : code=$code $observed"
+            }
+          }
+          Write-Host 'Native ARM64 OpenATL COM P1 factory/rollback/class-object activation 5/5 PASS'
+          $expectedP1B = 'ATL_COM_P1B_OK map=2 rollback=1 activation=2 revoke=1 wrongthread=1 registry=0'
+          for ($i = 1; $i -le 5; $i++) {
+            $out = @(& ./wtl10-arm64/atl_com_p1b_openatl_arm64.exe 2>&1)
+            $rc = $LASTEXITCODE
+            $actual = ($out | ForEach-Object { "$_".Trim() }) -join ''
+            if ($rc -ne 0 -or $actual -cne $expectedP1B) {
+              throw "Native ARM64 OpenATL COM P1-B failed run $i exit=$($rc): $actual"
+            }
+            foreach ($mode in @('invalid','duplicate','capacity')) {
+              $negOut = @(& ./wtl10-arm64/atl_com_p1b_openatl_arm64.exe $mode 2>&1)
+              $negRC = $LASTEXITCODE
+              $negText = ($negOut | ForEach-Object { "$_".Trim() }) -join ''
+              $negExpected = "ATL_COM_P1B_NEG_OK mode=$mode"
+              if ($negRC -ne 0 -or $negText -cne $negExpected) {
+                throw "Native ARM64 P1-B $mode rejection failed repetition $i exit=$($negRC): $negText"
+              }
+            }
+          }
+          Write-Host 'Native ARM64 OpenATL COM P1-B normal/invalid/duplicate/capacity map 5/5 PASS'
+          $expectedSandbox = 'ATL_REG_SANDBOX_OK isolated=1 redirect=1 rollback=1 restored=1 clean=1 stub_failclosed=1'
+          for ($i = 1; $i -le 5; $i++) {
+            $out = @(& ./wtl10-arm64/atl_registry_sandbox_arm64.exe 2>&1)
+            $rc = $LASTEXITCODE
+            $actual = ($out | ForEach-Object { "$_".Trim() }) -join ''
+            if ($rc -ne 0 -or $actual -cne $expectedSandbox) {
+              throw "Native Windows ARM64 registry sandbox failed run $i exit=$($rc): $actual"
+            }
+          }
+          Write-Host 'OpenATL native Windows ARM64 isolated HKCR test 5/5 PASS'
+          $expectedReal = 'ATL_P1C_REAL_OK guarded=1 writes=2 rollback=1 duplicate=1 targeted=1 clean=1 recovered=1'
+          for ($i = 1; $i -le 5; $i++) {
+            $result = @(& ./wtl10-arm64/atl_p1c_registrar_arm64.exe 2>&1)
+            $rc = $LASTEXITCODE
+            $actual = ($result | ForEach-Object { "$_".Trim() }) -join ''
+            if ($rc -ne 0 -or $actual -cne $expectedReal) {
+              throw "OpenATL P1-C native ARM64 registrar test failed run $i exit=$($rc): $actual"
+            }
+          }
+          Write-Host 'OpenATL P1-C native Windows ARM64 scoped registrar/rollback/separate-process crash recovery 5/5 PASS'
+          Write-Host 'Native ARM64 WTL10 hidden-window/dialog and RX thunk runtime 5/5 PASS'
+          Write-Host 'Native Windows ARM64 WTL10/OpenATL/TinyCC C ABI 5/5 PASS'

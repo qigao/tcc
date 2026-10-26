@@ -1,0 +1,11 @@
+/build/
+/build-*/
+/tools/
+/vendor/
+/.cache/
+*.exe
+*.dll
+*.obj
+*.o
+*.a
+*.lib

@@ -1,0 +1,381 @@
+name: Compiler portability POC
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-native:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        backend: [gnu, gas-x86_64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure and test
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=${{ matrix.compiler }} -DCMAKE_ASM_COMPILER=gcc -DPOC_ATOMIC_BACKEND=${{ matrix.backend }}
+          cmake --build build --parallel 2
+          ctest --test-dir build --repeat until-fail:5 --output-on-failure
+  linux-tinycc:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build immutable TinyCC source
+        run: |
+          git clone https://github.com/TinyCC/tinycc.git tools/tinycc
+          git -C tools/tinycc checkout --detach e23dabed154a8495f3ac1ff3cc9d04fa1c207893
+          cd tools/tinycc
+          ./configure --prefix="$GITHUB_WORKSPACE/tools/tcc-installed"
+          make -j2
+          make install
+      - name: Compile test client using TCC + external GAS assembly
+        run: |
+          cmake -S . -B build-tcc -G Ninja -DCMAKE_C_COMPILER="$GITHUB_WORKSPACE/tools/tcc-installed/bin/tcc" -DCMAKE_ASM_COMPILER=gcc -DPOC_ATOMIC_BACKEND=gas-x86_64
+          cmake --build build-tcc --parallel 2
+          ctest --test-dir build-tcc --repeat until-fail:5 --output-on-failure
+  linux-arm64-native:
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        backend: [gnu, gas-aarch64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native ARM64 compiler and atomic/thread runtime
+        run: |
+          test "$(uname -m)" = aarch64
+          cmake -S . -B build-arm -G Ninja -DCMAKE_C_COMPILER=${{ matrix.compiler }} -DCMAKE_ASM_COMPILER=gcc -DPOC_ATOMIC_BACKEND=${{ matrix.backend }}
+          cmake --build build-arm --parallel 2
+          ctest --test-dir build-arm --repeat until-fail:5 --output-on-failure
+  linux-arm64-tinycc:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned native ARM64 TinyCC source
+        run: |
+          test "$(uname -m)" = aarch64
+          git clone https://github.com/TinyCC/tinycc.git tools/tinycc
+          git -C tools/tinycc checkout --detach e23dabed154a8495f3ac1ff3cc9d04fa1c207893
+          cd tools/tinycc
+          ./configure --prefix="$GITHUB_WORKSPACE/tools/tcc-installed"
+          make -j2
+          make install
+      - name: Compile and run AArch64 GAS with actual TinyCC C clients
+        run: |
+          cmake -S . -B build-arm-tcc -G Ninja -DCMAKE_C_COMPILER="$GITHUB_WORKSPACE/tools/tcc-installed/bin/tcc" -DCMAKE_ASM_COMPILER=gcc -DPOC_ATOMIC_BACKEND=gas-aarch64
+          cmake --build build-arm-tcc --parallel 2
+          ctest --test-dir build-arm-tcc --repeat until-fail:5 --output-on-failure
+  linux-sanitizers:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            flags: -fsanitize=thread
+          - compiler: clang
+            flags: -fsanitize=address,undefined
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source-instrumented native atomic and thread tests
+        run: |
+          cmake -S . -B build-sanitize -G Ninja -DCMAKE_C_COMPILER=${{ matrix.compiler }} -DCMAKE_C_FLAGS="${{ matrix.flags }} -fno-omit-frame-pointer -g -O1" -DPOC_ATOMIC_BACKEND=gnu
+          cmake --build build-sanitize --parallel 2
+          ctest --test-dir build-sanitize --repeat until-fail:3 --output-on-failure
+  windows-llvm:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned llvm-mingw (UCRT x64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $uri = 'https://github.com/mstorsjo/llvm-mingw/releases/download/20261020/llvm-mingw-20261020-ucrt-x86_64.zip'
+          Invoke-WebRequest -Uri $uri -OutFile llvm-mingw.zip
+          $hash = (Get-FileHash llvm-mingw.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'fd5462b7f5d93b2ff981fcd3f9c7e427e47f3203c64ea91c27bcc444eebd74cd') { throw "toolchain hash mismatch: $hash" }
+          Expand-Archive llvm-mingw.zip -DestinationPath tools/llvm -Force
+          $driver = Get-ChildItem tools/llvm -Recurse -Filter x86_64-w64-mingw32-clang.exe | Select-Object -First 1
+          if (-not $driver) { throw 'LLVM Clang driver absent' }
+          "LLVM_MINGW_BIN=$($driver.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $driver.Directory.FullName | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Win32 atomic, thread, event and DLL C ABI
+        shell: pwsh
+        run: |
+          $clang = Join-Path $env:LLVM_MINGW_BIN 'x86_64-w64-mingw32-clang.exe'
+          cmake -S . -B build-win -G Ninja "-DCMAKE_C_COMPILER=$clang" "-DCMAKE_ASM_COMPILER=$clang" -DPOC_ATOMIC_BACKEND=win32
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
+          cmake --build build-win --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Windows compile failed' }
+          ctest --test-dir build-win --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'Windows runtime tests failed' }
+      - name: Windows i686 real C ABI and stack balance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $clang32 = Join-Path $env:LLVM_MINGW_BIN 'i686-w64-mingw32-clang.exe'
+          if (-not (Test-Path $clang32)) { throw 'i686 compiler missing from pinned toolchain' }
+          New-Item -ItemType Directory -Force build-x86 | Out-Null
+          & $clang32 -std=c11 -shared -O0 tests/win_x86/abi_exports.c -o build-x86/poc_x86_abi.dll
+          if ($LASTEXITCODE -ne 0) { throw 'i686 DLL compile failed' }
+          & $clang32 -std=c11 -O0 tests/win_x86/abi_client.c -o build-x86/poc_x86_abi_client.exe
+          if ($LASTEXITCODE -ne 0) { throw 'i686 C client compile failed' }
+          Push-Location build-x86
+          try {
+            for ($i = 0; $i -lt 5; ++$i) {
+              & ./poc_x86_abi_client.exe
+              if ($LASTEXITCODE -ne 0) { throw "i686 stack/ABI test failed ($LASTEXITCODE)" }
+            }
+          } finally { Pop-Location }
+      - name: Windows TinyCC, RATL and obfus.h required runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest 'https://github.com/DosX-dev/TinyCC-builder/releases/download/2026-10-22/tinycc-windows-2026-10-22.zip' -OutFile tinycc.zip
+          $hash = (Get-FileHash tinycc.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '19990b71f401068306ad699aa80af4afaf7f1a7a0110e791022b99da4cbd92e0') { throw 'TinyCC binary checksum mismatch' }
+          Expand-Archive tinycc.zip -DestinationPath tools/tinycc-win -Force
+          $tcc = Get-ChildItem tools/tinycc-win -Recurse -Filter tcc.exe | Select-Object -First 1
+          if (-not $tcc) { throw 'TCC exe absent' }
+          git clone https://github.com/katahiromz/RATL.git tools/ratl
+          git -C tools/ratl checkout --detach 2e2efa182d7c6ee9037454d23780991fb8543084
+          New-Item -ItemType Directory -Force tools/obfus | Out-Null
+          Invoke-WebRequest 'https://raw.githubusercontent.com/DosX-dev/obfus.h/52c971a8270e3dd27f3c4fba9f464150b63bf021/include/obfus.h' -OutFile tools/obfus/obfus.h
+          ./scripts/windows-interop.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -TinyCCExe $tcc.FullName -RATLRoot (Resolve-Path tools/ratl).Path -ObfusHeader (Resolve-Path tools/obfus/obfus.h).Path
+      - name: Windows TinyCC C11 unsupported capability gate (no false positive)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tcc = Get-ChildItem tools/tinycc-win -Recurse -Filter tcc.exe | Select-Object -First 1
+          if (-not $tcc) { throw 'Pinned native TinyCC x64 missing' }
+          New-Item -ItemType Directory -Force build-c11-tcc | Out-Null
+          & $tcc.FullName '-std=c11' 'tests/c11/expect_no_atomics.c' '-o' 'build-c11-tcc/expect_no_atomics.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'TinyCC atomics capability diagnostic failed' }
+          & ./build-c11-tcc/expect_no_atomics.exe
+          if ($LASTEXITCODE -ne 0) { throw 'TinyCC atomics capability result changed' }
+      - name: Windows ARM64 TinyCC and llvm-mingw required PE compile (no runtime)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tccArm = Get-ChildItem tools/tinycc-win -Recurse -Filter arm64-win32-tcc.exe | Select-Object -First 1
+          $clangArm = Join-Path $env:LLVM_MINGW_BIN 'aarch64-w64-mingw32-clang.exe'
+          if (-not $tccArm -or -not (Test-Path $clangArm)) {
+            throw 'One or more pinned Windows ARM64 compilers missing'
+          }
+          New-Item -ItemType Directory -Force build-arm64-win | Out-Null
+          function Invoke-Checked([string]$program, [string[]]$arguments_) {
+            & $program @arguments_
+            if ($LASTEXITCODE -ne 0) { throw "$program failed to compile ARM64 PE: $LASTEXITCODE" }
+          }
+          function Assert-Arm64-PE([string]$file) {
+            [byte[]]$raw = [IO.File]::ReadAllBytes((Resolve-Path $file).Path)
+            if ($raw.Length -lt 128) { throw "PE too small: $file" }
+            $pe = [BitConverter]::ToInt32($raw, 0x3c)
+            if ($pe -lt 64 -or $pe + 6 -gt $raw.Length) { throw "Invalid PE header: $file" }
+            if ($raw[$pe] -ne 0x50 -or $raw[$pe+1] -ne 0x45) { throw "PE signature absent: $file" }
+            $machine = [BitConverter]::ToUInt16($raw, $pe + 4)
+            if ($machine -ne 0xAA64) { throw "Expected IMAGE_FILE_MACHINE_ARM64, got $machine for $file" }
+            Write-Host "PE ARM64 confirmed: $file"
+          }
+          Invoke-Checked $clangArm @('-std=c11', '-Iinclude', 'tests/win_api.c',
+            '-o', 'build-arm64-win/win_api_llvm_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/win_api_llvm_arm64.exe'
+          Invoke-Checked $tccArm.FullName @('tests/win_api.c', '-o', 'build-arm64-win/win_api_tcc_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/win_api_tcc_arm64.exe'
+          Invoke-Checked $tccArm.FullName @('-Iinclude', 'src/atomic/win_interlocked.c',
+            'tests/atomic_thread.c', '-o', 'build-arm64-win/atomic_thread_tcc_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/atomic_thread_tcc_arm64.exe'
+          Invoke-Checked $tccArm.FullName @('-Iinclude', 'src/threads/threads.c',
+            'src/atomic/win_interlocked.c', 'tests/thread_contract.c',
+            '-o', 'build-arm64-win/thread_contract_tcc_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/thread_contract_tcc_arm64.exe'
+          Invoke-Checked $tccArm.FullName @('-Iinclude', 'src/threads/threads.c',
+            'tests/thread_shutdown_overlap.c',
+            '-o', 'build-arm64-win/thread_shutdown_overlap_tcc_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/thread_shutdown_overlap_tcc_arm64.exe'
+          # llvm-mingw C references: native Arm64 runtime parity, not SDK builds.
+          Invoke-Checked $clangArm @('-std=c11', '-Iinclude',
+            'src/atomic/win_interlocked.c', 'tests/atomic_thread.c',
+            '-o', 'build-arm64-win/atomic_thread_llvm_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/atomic_thread_llvm_arm64.exe'
+          Invoke-Checked $clangArm @('-std=c11', '-Iinclude',
+            'src/threads/threads.c', 'src/atomic/win_interlocked.c',
+            'tests/thread_contract.c',
+            '-o', 'build-arm64-win/thread_contract_llvm_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/thread_contract_llvm_arm64.exe'
+          # ARM64 DLL provider is all native llvm-mingw C; the TinyCC ARM64
+          # client uses LoadLibrary/GetProcAddress and a bounded lease owner.
+          Invoke-Checked $clangArm @('-std=c11', '-O2', '-shared', '-Iinclude',
+            'src/atomic/win64_dll_exports.c', 'src/atomic/gnu_atomic64.c',
+            '-o', 'build-arm64-win/poc_atomic64_win.dll')
+          Assert-Arm64-PE 'build-arm64-win/poc_atomic64_win.dll'
+          Invoke-Checked $clangArm @('-std=c11', '-shared',
+            'tests/win_x64/bad_abi.c',
+            '-o', 'build-arm64-win/poc_atomic64_badabi.dll')
+          Assert-Arm64-PE 'build-arm64-win/poc_atomic64_badabi.dll'
+          Invoke-Checked $tccArm.FullName @('-Iinclude',
+            '-DPOC_ATOMIC64_EXTERNAL_DLL=1',
+            'src/atomic/win64_dll_client.c', 'src/threads/threads.c',
+            'tests/atomic_small_thread.c',
+            '-o', 'build-arm64-win/atomic_small_tcc_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/atomic_small_tcc_arm64.exe'
+          Invoke-Checked $tccArm.FullName @('-Iinclude',
+            '-DPOC_ATOMIC64_EXTERNAL_DLL=1',
+            'src/atomic/win64_dll_client.c', 'src/atomic/ptr64.c',
+            'src/threads/threads.c', 'tests/atomic64_thread.c',
+            '-o', 'build-arm64-win/atomic64_tcc_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/atomic64_tcc_arm64.exe'
+          # Native C11 compiler semantics: Clang is qualified; pinned
+          # TinyCC ARM64 reports NO_ATOMICS and must not be misrepresented.
+          Invoke-Checked $clangArm @('-std=c11', '-O2',
+            'tests/c11/atomic_scalar.c',
+            '-o', 'build-arm64-win/c11_atomic_scalar_llvm_arm64.exe')
+          Invoke-Checked $clangArm @('-std=c11', '-O2', '-Iinclude',
+            'src/threads/threads.c', 'tests/c11/atomic_concurrent.c',
+            '-o', 'build-arm64-win/c11_atomic_concurrent_llvm_arm64.exe')
+          Invoke-Checked $tccArm.FullName @('-std=c11',
+            'tests/c11/expect_no_atomics.c',
+            '-o', 'build-arm64-win/c11_no_atomics_tcc_arm64.exe')
+          foreach ($name in @('c11_atomic_scalar_llvm_arm64.exe',
+                               'c11_atomic_concurrent_llvm_arm64.exe',
+                               'c11_no_atomics_tcc_arm64.exe')) {
+            Assert-Arm64-PE "build-arm64-win/$name"
+          }
+          $manifest = @{}
+          Get-ChildItem build-arm64-win -File | Where-Object {
+            $_.Extension -in @('.exe', '.dll')
+          } | ForEach-Object {
+            $manifest[$_.Name] = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content build-arm64-win/manifest.json -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-arm64-actual-runtime-executables
+          path: build-arm64-win/*
+          if-no-files-found: error
+      - name: Windows TinyCC x86 required ABI, Atomic32 and Threads runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tcc32 = Get-ChildItem tools/tinycc-win -Recurse -Filter i386-win32-tcc.exe | Select-Object -First 1
+          if (-not $tcc32) { throw 'Pinned TinyCC package lacks i386-win32-tcc.exe' }
+          $root = (Resolve-Path .).Path
+          $inc = Join-Path $root 'include'
+          $bin = Join-Path $root 'build-x86'
+          function Invoke-Checked([string]$program, [string[]]$args_) {
+            & $program @args_
+            if ($LASTEXITCODE -ne 0) { throw "$program exited $LASTEXITCODE" }
+          }
+          $clang32 = Join-Path $env:LLVM_MINGW_BIN 'i686-w64-mingw32-clang.exe'
+          if (-not (Test-Path $clang32)) { throw 'Pinned llvm-mingw i686 compiler missing' }
+          # Strict i686 C ABI: llvm-mingw builds DLL, TinyCC compiles the client.
+          Invoke-Checked $clang32 @('-std=c11', '-O2', '-shared', "-I$inc",
+            'tests/win_x86/atomic_dispatch.c', '-o', 'build-x86/poc_x86_atomic.dll')
+          Invoke-Checked $clang32 @('-std=c11', '-O2', '-shared',
+            'tests/win_x86/atomic_wrongabi.c', '-o', 'build-x86/poc_x86_atomic_badabi.dll')
+          Invoke-Checked $tcc32.FullName @("-I$inc", '-DPOC_ATOMIC_SMALL_X86_DLL=1',
+            'src/atomic/win_x86_dll_client.c', 'src/threads/threads.c',
+            'tests/atomic_small_thread.c', '-o', 'build-x86/atomic_small_tcc_x86.exe')
+          Invoke-Checked $tcc32.FullName @("-I$inc",
+            'src/atomic/win_x86_dll_client.c', 'src/threads/threads.c',
+            'tests/win_x86/atomic_ptr32_test.c', '-o', 'build-x86/atomic_ptr32_tcc_x86.exe')
+          Invoke-Checked $tcc32.FullName @("-I$inc",
+            'src/atomic/win_x86_dll_client.c', 'src/threads/threads.c',
+            'tests/win_x86/atomic64_test.c', '-o', 'build-x86/atomic64_tcc_x86.exe')
+          # True native i686 Clang standard atomic behavior versus
+          # TinyCC's explicit unsupported standard capability.
+          Invoke-Checked $clang32 @('-std=c11', '-O2',
+            'tests/c11/atomic_scalar.c', '-o', 'build-x86/c11_atomic_scalar_llvm_x86.exe')
+          Invoke-Checked $clang32 @('-std=c11', '-O2', "-I$inc",
+            'src/threads/threads.c', 'tests/c11/atomic_concurrent.c',
+            '-o', 'build-x86/c11_atomic_concurrent_llvm_x86.exe')
+          Invoke-Checked $tcc32.FullName @('-std=c11',
+            'tests/c11/expect_no_atomics.c', '-o', 'build-x86/c11_no_atomics_tcc_x86.exe')
+          Invoke-Checked $tcc32.FullName @('tests/win_x86/abi_client.c', '-o', 'build-x86/abi_client_tcc.exe')
+          Invoke-Checked $tcc32.FullName @("-I$inc", 'src/atomic/win_interlocked.c',
+            'tests/atomic_thread.c', '-o', 'build-x86/atomic_thread_tcc_x86.exe')
+          Invoke-Checked $tcc32.FullName @("-I$inc", 'src/threads/threads.c',
+            'src/atomic/win_interlocked.c', 'tests/thread_contract.c',
+            '-o', 'build-x86/thread_contract_tcc_x86.exe')
+          Invoke-Checked $tcc32.FullName @("-I$inc", 'src/threads/threads.c',
+            'tests/thread_shutdown_overlap.c', '-o', 'build-x86/thread_shutdown_overlap_tcc_x86.exe')
+          Push-Location $bin
+          try {
+            foreach ($name in @('abi_client_tcc.exe', 'atomic_thread_tcc_x86.exe',
+                                'atomic_small_tcc_x86.exe', 'atomic_ptr32_tcc_x86.exe',
+                                'atomic64_tcc_x86.exe',
+                                'c11_atomic_scalar_llvm_x86.exe',
+                                'c11_atomic_concurrent_llvm_x86.exe',
+                                'c11_no_atomics_tcc_x86.exe',
+                                'thread_contract_tcc_x86.exe', 'thread_shutdown_overlap_tcc_x86.exe')) {
+              $repetitions = if ($name -like 'thread_*') { 20 } else { 10 }
+              for ($i = 0; $i -lt $repetitions; ++$i) {
+                Invoke-Checked (Join-Path $bin $name) @()
+              }
+            }
+          } finally { Pop-Location }
+
+  windows-arm64-native:
+    name: Windows ARM64 native TinyCC/llvm-mingw runtime
+    needs: windows-llvm
+    runs-on: windows-11-vs2026-arm
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: win-arm64-actual-runtime-executables
+          path: arm64-bin
+      - name: Verify ARM64 hardware, PE provenance and execute real binaries
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($arch -ne 'Arm64' -or -not [Environment]::Is64BitProcess) {
+            throw "Native Windows ARM64 required, got $arch"
+          }
+          $manifest = Get-Content arm64-bin/manifest.json -Raw | ConvertFrom-Json -AsHashtable
+          $names = @(
+            'win_api_llvm_arm64.exe',
+            'win_api_tcc_arm64.exe',
+            'atomic_thread_tcc_arm64.exe',
+            'thread_contract_tcc_arm64.exe',
+            'thread_shutdown_overlap_tcc_arm64.exe',
+            'atomic_thread_llvm_arm64.exe',
+            'thread_contract_llvm_arm64.exe',
+            'atomic_small_tcc_arm64.exe',
+            'atomic64_tcc_arm64.exe',
+            'c11_atomic_scalar_llvm_arm64.exe',
+            'c11_atomic_concurrent_llvm_arm64.exe',
+            'c11_no_atomics_tcc_arm64.exe'
+          )
+          $dlls = @('poc_atomic64_win.dll', 'poc_atomic64_badabi.dll')
+          foreach ($name in ($names + $dlls)) {
+            $path = (Resolve-Path (Join-Path 'arm64-bin' $name)).Path
+            [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
+            $pe = [BitConverter]::ToInt32($bytes, 0x3c)
+            if ($pe -lt 64 -or $pe + 6 -ge $bytes.Length -or
+                $bytes[$pe] -ne 0x50 -or $bytes[$pe+1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($bytes, $pe + 4) -ne 0xAA64) {
+              throw "Non-ARM64 PE or corrupt file: $name"
+            }
+            $sha = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($sha -ne $manifest[$name]) { throw "Artifact SHA mismatch: $name" }
+          }
+          foreach ($name in $names) {
+            $path = (Resolve-Path (Join-Path 'arm64-bin' $name)).Path
+            $repeat = if ($name -like '*thread*' -or
+                          $name -like 'atomic*_tcc_arm64.exe') { 10 } else { 5 }
+            for ($i = 1; $i -le $repeat; ++$i) {
+              & $path
+              if ($LASTEXITCODE -ne 0) {
+                throw "Native ARM64 runtime failed: $name repetition $i exit $LASTEXITCODE"
+              }
+            }
+            Write-Host "Native Windows ARM64 PASSED ($repeat runs): $name"
+          }

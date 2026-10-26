@@ -1,0 +1,44 @@
+name: LLVM obfuscation POC
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/llvm-obfuscator-poc.yml'
+      - 'scripts/llvm-pass-smoke.sh'
+      - 'tests/obfuscation/llvm_fixture.c'
+permissions:
+  contents: read
+jobs:
+  llvm14-host-pass:
+    runs-on: ubuntu-22.04
+    # Required exact-head LLVM 14 native host gate; not llvm-mingw compatibility.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install LLVM 14 host toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-14 llvm-14-dev
+          clang-14 --version
+          llvm-config-14 --version
+          opt-14 --version
+      - name: Build commit-pinned LLVM plugin against the same host LLVM
+        run: |
+          git clone https://github.com/eshard/obfuscator-llvm.git tools/llvm-obfuscator
+          git -C tools/llvm-obfuscator checkout --detach ad26aa21b90cc5c5118d32114b674d1455f54168
+          git -C tools/llvm-obfuscator apply "$GITHUB_WORKSPACE/patches/llvm14-demote-phi.patch"
+          cmake -S tools/llvm-obfuscator -B build-llvm-plugin -G Ninja \
+            -DLLVM_DIR="$(llvm-config-14 --cmakedir)"
+          cmake --build build-llvm-plugin --parallel 2
+          test -f build-llvm-plugin/libLLVMObfuscator.so
+      - name: Prove the pass changed LLVM IR without changing program behavior
+        run: |
+          LLVM_OBF_PLUGIN="$GITHUB_WORKSPACE/build-llvm-plugin/libLLVMObfuscator.so" \
+            CLANG=clang-14 OPT=opt-14 bash scripts/llvm-pass-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: llvm14-obfuscator-ir
+          path: |
+            build-llvm-obf/*.ll
+            build-llvm-obf/*.stdout
+          if-no-files-found: ignore

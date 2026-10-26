@@ -1,0 +1,321 @@
+name: Android TinyCC NDK/Bionic qualification
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_arm64_tcg:
+        description: 'Opt into slow software-emulated ARM64 Android guest diagnostic'
+        type: boolean
+        required: false
+        default: false
+permissions:
+  contents: read
+jobs:
+  android-tcc-cross:
+    name: Android ${{ matrix.abi }} TinyCC NDK build
+    runs-on: ubuntu-24.04
+    # Exact Android native/NDK qualification must pass; no silent fallback.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: x86_64
+            cpu: x86_64
+            triple: x86_64-linux-android
+          - abi: arm64-v8a
+            cpu: arm64
+            triple: aarch64-linux-android
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Android/Bionic TinyCC
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_NDK_HOME:?Ubuntu Android NDK must be available}"
+          BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          CC="$BIN/${{ matrix.triple }}29-clang"
+          AR="$BIN/llvm-ar"
+          test -x "$CC" && test -x "$AR"
+          git clone https://github.com/TinyCC/tinycc.git tools/tinycc-android
+          git -C tools/tinycc-android checkout --detach e23dabed154a8495f3ac1ff3cc9d04fa1c207893
+          mkdir -p build-android-${{ matrix.abi }}
+          cd tools/tinycc-android
+          ./configure --cpu="${{ matrix.cpu }}" --targetos=Android \
+            --cc="$CC" --ar="$AR" --prefix=/data/local/tmp/tcc
+          # c2str.exe generates a C header DURING THE BUILD, and must run on
+          # the Linux HOST rather than be built as an Android target ELF.
+          /usr/bin/cc -DC2STR conftest.c -o c2str.exe
+          test -x ./c2str.exe
+          # Android Bionic implements pthread in libc. There is no
+          # separate -lpthread linker library in the NDK sysroot.
+          make -j2 tcc LIBS="-lm -ldl"
+          cp tcc "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/tcc"
+          cp libtcc.so "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/libtcc.so"
+          "$CC" -O2 -std=c11 -pthread \
+            "$GITHUB_WORKSPACE/tests/platform/android_smoke.c" \
+            -ldl -o "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/android_smoke"
+          "$BIN/llvm-readelf" -h tcc
+          "$BIN/llvm-readelf" -l tcc | grep -A2 INTERP
+          file "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/"*
+      - name: Upload Android ELF evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.abi }}-tcc
+          path: build-android-${{ matrix.abi }}/*
+          if-no-files-found: warn
+
+  android-x86-emulator:
+    name: Android x86_64 emulator true TinyCC runtime
+    needs: android-tcc-cross
+    runs-on: ubuntu-24.04
+    # Exact Android native/NDK qualification must pass; no silent fallback.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-x86_64-tcc
+          path: build-android-x86_64
+      - name: Allow Android Emulator hardware virtualization
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          ls -l /dev/kvm
+      - name: Execute NDK/Bionic and real TCC on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-window -noaudio -no-boot-anim -gpu swiftshader_indirect -no-snapshot-load -no-snapshot-save
+          script: bash scripts/android-emulator-smoke.sh
+      - name: Upload Android native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-tcc-x86_64-evidence
+          path: |
+            build-android-x86_64/adb*.txt
+            build-android-x86_64/*.o
+            build-android-x86_64/android_tcc_consumer
+          if-no-files-found: warn
+
+  android-arm64-emulator:
+    name: Android ARM64 software TCG guest (opt-in, NOT hardware)
+    # Workflow_dispatch requires this workflow to exist on the default
+    # branch. While PR #1 is Draft, allow an explicit repo variable opt-in
+    # on its trusted, repository-owned PR branch instead.
+    if: >-
+      ${{
+        (
+          github.event_name == 'workflow_dispatch' &&
+          inputs.run_arm64_tcg == true
+        ) ||
+        (
+          vars.TCC_ANDROID_ARM64_TCG_DIAGNOSTIC == 'true' &&
+          github.repository == 'qigao/tcc' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == 'qigao/tcc' &&
+          github.event.pull_request.user.login == 'qigao' &&
+          github.event.pull_request.head.ref == 'poc/tcc-llvm-mingw-atomic-threads-atl'
+        )
+      }}
+    needs: [android-tcc-cross, android-apk-sandbox]
+    runs-on: macos-15
+    continue-on-error: true
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-arm64-v8a-tcc
+          path: build-android-arm64-v8a
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-target35-multiabi-apk
+          path: android/apk-poc/app/build/outputs/apk/debug
+      - name: Require real ARM64 macOS host
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          test "$(uname -s)" = Darwin
+      - name: Run native ARM64 Bionic TinyCC and object/NDK interop
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_TEST_ABI: arm64-v8a
+        with:
+          api-level: 35
+          target: google_apis
+          arch: arm64-v8a
+          profile: pixel_5
+          ndk: 27.3.13750724
+          cores: 2
+          ram-size: 2048M
+          emulator-boot-timeout: 900
+          disable-animations: true
+          # Hosted macOS arm64 cannot use nested Hypervisor.Framework (HV_UNSUPPORTED).
+          # Software TCG is a diagnostic fallback, never called native hardware.
+          emulator-options: -no-window -noaudio -no-boot-anim -accel off -gpu swiftshader_indirect -no-snapshot-load -no-snapshot-save
+          script: bash scripts/android-emulator-smoke.sh && bash scripts/android-apk-sandbox-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-emulator-tcc-arm64-evidence
+          path: |
+            build-android-arm64-v8a/adb*.txt
+            build-android-arm64-v8a/*.o
+            build-android-arm64-v8a/android_tcc_consumer
+          if-no-files-found: warn
+
+  android-apk-sandbox:
+    name: Android APK targetSdk35 JNI libtcc app sandbox
+    needs: android-tcc-cross
+    runs-on: ubuntu-24.04
+    # Required: app-process JNI and ET_REL sandbox checks must actually pass.
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-x86_64-tcc
+          path: build-android-x86_64
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-arm64-v8a-tcc
+          path: build-android-arm64-v8a
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Build packaged libtcc and JNI library
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_NDK_HOME:?Android NDK needed}"
+          LIBS=android/apk-poc/app/src/main/jniLibs/x86_64
+          mkdir -p "$LIBS"
+          cp build-android-x86_64/libtcc.so "$LIBS/libtcc.so"
+          BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          "$BIN/x86_64-linux-android29-clang" -std=c11 -O1 -shared -fPIC \
+            -Wall -Wextra -Werror -ldl android/apk-poc/jni/native_bridge.c \
+            -o "$LIBS/libpoc_tcc_jni.so"
+          "$BIN/llvm-readelf" -h "$LIBS/libpoc_tcc_jni.so"
+          LIBS_ARM=android/apk-poc/app/src/main/jniLibs/arm64-v8a
+          mkdir -p "$LIBS_ARM"
+          cp build-android-arm64-v8a/libtcc.so "$LIBS_ARM/libtcc.so"
+          "$BIN/aarch64-linux-android29-clang" -std=c11 -O1 -shared -fPIC \
+            -Wall -Wextra -Werror -ldl android/apk-poc/jni/native_bridge.c \
+            -o "$LIBS_ARM/libpoc_tcc_jni.so"
+          "$BIN/llvm-readelf" -h "$LIBS_ARM/libpoc_tcc_jni.so"
+      - name: Build targetSdk35 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --project-dir android/apk-poc :app:assembleDebug
+          test -s android/apk-poc/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-target35-multiabi-apk
+          path: android/apk-poc/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Enable Android Emulator KVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+      - name: Test JNI compilation inside APK sandbox
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-window -noaudio -no-boot-anim -gpu swiftshader_indirect -no-snapshot-load -no-snapshot-save
+          script: bash scripts/android-apk-sandbox-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-apk-libtcc-jni-sandbox-evidence
+          path: |
+            build-android-x86_64/adb-apk*.txt
+            build-android-x86_64/android_apk_native_tcc.o
+          if-no-files-found: warn
+
+  android-arm64-hardware:
+    name: Android ARM64 physical-device compiler and APK JNI acceptance
+    # Self-hosted devices are highly sensitive. Never admit fork PR code.
+    # Set repository variable TCC_ANDROID_ARM64_DEVICE_ENABLED=true only
+    # after attaching an isolated, trusted ARM64 Android test device.
+    if: >-
+      ${{
+        vars.TCC_ANDROID_ARM64_DEVICE_ENABLED == 'true' &&
+        github.repository == 'qigao/tcc' &&
+        (
+          (
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == 'qigao/tcc' &&
+            github.event.pull_request.user.login == 'qigao' &&
+            github.event.pull_request.head.ref == 'poc/tcc-llvm-mingw-atomic-threads-atl'
+          ) ||
+          (
+            github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/poc/tcc-llvm-mingw-atomic-threads-atl'
+          )
+        )
+      }}
+    needs: [android-tcc-cross, android-apk-sandbox]
+    runs-on: [self-hosted, linux, x64, android-arm64-device]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-arm64-v8a-tcc
+          path: build-android-arm64-v8a
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-target35-multiabi-apk
+          path: android/apk-poc/app/build/outputs/apk/debug
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android platform tools and pinned NDK for real device
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install 'platform-tools' 'ndk;27.3.13750724'
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:?Android SDK missing}}"
+          test -x "$SDK/platform-tools/adb"
+          test -x "$SDK/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          echo "ANDROID_NDK_HOME=$SDK/ndk/27.3.13750724" >> "$GITHUB_ENV"
+      - name: Admit real ARM64 USB Android device and run object/JNI contract
+        shell: bash
+        env:
+          ANDROID_TEST_ABI: arm64-v8a
+          ANDROID_ARM64_HARDWARE: '1'
+          ANDROID_SERIAL: ${{ secrets.TCC_ANDROID_ARM64_SERIAL }}
+        run: |
+          set -euo pipefail
+          bash scripts/android-arm64-device-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-arm64-physical-device-tcc-evidence
+          path: |
+            build-android-arm64-v8a/adb*.txt
+            build-android-arm64-v8a/*.o
+          if-no-files-found: warn
