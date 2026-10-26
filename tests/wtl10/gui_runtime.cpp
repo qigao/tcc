@@ -169,7 +169,7 @@ static bool check_dialog()
     HINSTANCE executable = ::GetModuleHandleW(NULL);
     wchar_t resource_string[64] = {};
     if (::FindResourceW(executable, MAKEINTRESOURCEW(IDD_POC_DIALOG), RT_DIALOG) == NULL ||
-        ::LoadStringW(executable, IDS_POC_STRING, resource_string, 64) != 23 ||
+        ::LoadStringW(executable, IDS_POC_STRING, resource_string, 64) != 24 ||
         ::lstrcmpW(resource_string, L"WTL10_RESOURCE_NATIVE_OK") != 0)
         return false;
 
