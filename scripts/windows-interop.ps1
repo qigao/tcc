@@ -29,6 +29,9 @@ try {
     (Join-Path $root 'src/atomic/win_interlocked.c'),
     (Join-Path $root 'tests/thread_contract.c'), '-o', 'thread_contract_tcc.exe')
   for ($i = 1; $i -le 5; ++$i) { Invoke-Checked (Join-Path $bin 'thread_contract_tcc.exe') @() }
+  Invoke-Checked $TinyCCExe @("-I$inc", (Join-Path $root 'src/threads/threads.c'),
+    (Join-Path $root 'tests/thread_shutdown_overlap.c'), '-o', 'thread_shutdown_overlap_tcc.exe')
+  for ($i = 1; $i -le 5; ++$i) { Invoke-Checked (Join-Path $bin 'thread_shutdown_overlap_tcc.exe') @() }
   Invoke-Checked $TinyCCExe @((Join-Path $root 'tests/win_api.c'), '-o', 'win_api_tcc.exe')
   Invoke-Checked (Join-Path $bin 'win_api_tcc.exe') @()
   Invoke-Checked $TinyCCExe @("-I$inc", (Join-Path $root 'tests/bridge_client.c'), '-o', 'bridge_client_tcc.exe')

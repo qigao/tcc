@@ -29,7 +29,7 @@ A **passed compilation** does not establish ABI/layout, memory-order semantics, 
 
 ## Thread ownership
 
-The `poc_thread`, `poc_mutex`, `poc_condition` and `poc_tss` types are **private ABI test objects**. No fields may cross compilers or DSOs; callers zero-initialize the storage and keep its address stable. The callback result is published before successful join and read after join. Closing the queue holds its mutex and broadcasts to all waiters. Thread-specific destructor callbacks must run before the owner deletes its key, with Win32 FLS and POSIX pthread implementations independently exercised. Destroying with blocked waiters or racing writers remains invalid; later tests will add explicit busy-error policies rather than silently masking undefined lifetime.
+The `poc_thread`, `poc_mutex`, `poc_condition` and `poc_tss` types are **private ABI test objects**. No fields may cross compilers or DSOs; callers zero-initialize the storage and keep its address stable. The callback result is published before successful join and read after join. Closing the queue holds its mutex and broadcasts to all waiters. A separate capacity-one fixture deterministically parks an admitted writer on a full queue and an admitted reader on an empty queue, then closes the owner while each is actually waiting, verifies exact fail-closed outcomes, and checks absence of phantom reads/writes. Thread-specific destructor callbacks must run before the owner deletes its key, with Win32 FLS and POSIX pthread implementations independently exercised. Destroying with blocked waiters or racing writers remains invalid; later tests will add explicit busy-error policies rather than silently masking undefined lifetime.
 
 ## RATL and Windows C ABI
 
