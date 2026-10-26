@@ -53,6 +53,7 @@ changes = [
      "::SetWindowLongPtr(m_hWnd, GWLP_WNDPROC, (LONG_PTR)m_pfnSuperWindowProc)", 2),
     ("::SetWindowLong(pThis->m_hWnd, DWL_MSGRESULT, lRes)",
      "::SetWindowLongPtr(pThis->m_hWnd, DWLP_MSGRESULT, (LONG_PTR)lRes)", 1),
+    ("(LPCTSTR)MAKELONG(atom, 0)", "(LPCTSTR)MAKEINTATOM(atom)", 2),
     ("nID = (UINT)this;", "nID = (UINT_PTR)this;", 2),
     ("UINT nID, ATOM atom", "UINT_PTR nID, ATOM atom", 2),
     ("UINT nID = 0", "UINT_PTR nID = 0", 7),
