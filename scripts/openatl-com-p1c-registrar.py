@@ -150,6 +150,10 @@ inline HRESULT AtlSandboxRegistryClassWrite(HKEY root, REFCLSID clsid) noexcept
         ::RegDeleteTreeW(root,path);
         return HRESULT_FROM_WIN32(status);
     }
+    if (disposition != REG_CREATED_NEW_KEY) {
+        ::RegCloseKey(entry);
+        return HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS);
+    }
     const wchar_t* value=L"TEST-ONLY-NOT-AN-EXECUTABLE";
     status=::RegSetValueExW(entry,NULL,0,REG_SZ,
         reinterpret_cast<const BYTE*>(value),
