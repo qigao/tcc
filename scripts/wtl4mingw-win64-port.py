@@ -231,7 +231,7 @@ controls.write_text(s, encoding="utf-8")
 # conflicts with the actual CRT type (unsigned char in ANSI builds).
 misc = root / "wtl/include/atlmisc.h"
 s = misc.read_text(encoding="utf-8")
-s = change(s, "#ifndef _TUCHAR\\ntypedef wchar_t     _TUCHAR;\\n#endif",
+s = change(s, "#ifndef _TUCHAR\ntypedef wchar_t     _TUCHAR;\n#endif",
            "// Use _TUCHAR from modern MinGW CRT <tchar.h>; do not redeclare.")
 misc.write_text(s, encoding="utf-8")
 
