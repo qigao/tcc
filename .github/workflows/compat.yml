@@ -211,6 +211,22 @@ jobs:
             }
           } finally { Pop-Location }
           Write-Host 'WTL4MinGW x64 CWindowImpl callback RX thunk 5/5 PASS'
+      - name: WTL4MinGW x64/ARM64 WTL8 controls/frame/dialog header diagnostic
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($triple in @('x86_64','aarch64')) {
+            $cc = Join-Path $env:LLVM_MINGW_BIN "$triple-w64-mingw32-clang++.exe"
+            $args_ = @('-std=c++11','-fsyntax-only','-include','algorithm',
+              '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
+              '-fms-extensions','-Itools/wtl4mingw/atlport/include',
+              '-Itools/wtl4mingw/stdext/include','-Itools/wtl4mingw/wtl/include',
+              'tests/atl_ports/wtl4mingw_full_headers.cpp')
+            & $cc @args_
+            if ($LASTEXITCODE -ne 0) { throw "WTL8 full Win64 header parse failed on $triple" }
+          }
+          Write-Host 'WTL8 frame/control/dialog headers x64 ARM64 parsing PASS'
       - name: Windows ARM64 TinyCC and llvm-mingw required PE compile (no runtime)
         shell: pwsh
         run: |
