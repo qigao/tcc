@@ -26,9 +26,11 @@ machine=$(adb shell uname -m | tr -d '\r')
 sdk=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
 emulator=$(adb shell getprop ro.kernel.qemu | tr -d '\r')
 bootemu=$(adb shell getprop ro.boot.qemu | tr -d '\r')
+hardware=$(adb shell getprop ro.hardware | tr -d '\r')
 if [[ "$abi" != arm64-v8a || "$machine" != aarch64 ||
-      ! "$sdk" =~ ^[0-9]+$ || "$sdk" -lt 29 ||
-      "$emulator" == 1 || "$bootemu" == 1 ]]; then
+      ! "$sdk" =~ ^[0-9]+$ || "$sdk" -lt 35 ||
+      "$emulator" == 1 || "$bootemu" == 1 ||
+      "$hardware" == ranchu || "$hardware" == goldfish ]]; then
   echo "Reject ARM64 ABI mismatch, unsupported SDK or emulator" >&2
   exit 3
 fi
@@ -43,6 +45,9 @@ BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 grep -q 'Machine:.*AArch64' build-android-arm64-v8a/adb-tcc-provider-header.txt
 export ANDROID_TEST_ABI=arm64-v8a
 export ANDROID_ARM64_HARDWARE=1
-bash scripts/android-emulator-smoke.sh
-bash scripts/android-apk-sandbox-smoke.sh
-echo "Android ARM64 physical-device TinyCC ELF + targetSdk35 JNI ET_REL PASS"
+for attempt in 1 2 3; do
+  echo "ARM64 physical-device contract repetition $attempt/3"
+  bash scripts/android-emulator-smoke.sh
+  bash scripts/android-apk-sandbox-smoke.sh
+done
+echo "Android ARM64 physical-device TinyCC ELF + targetSdk35 JNI ET_REL 3/3 PASS"
