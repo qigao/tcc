@@ -215,7 +215,16 @@ static int execute(const char* mode) {
     const bool cleaned=scratch.cleanup();
     if(!cleaned)return fail(14,"sandbox_cleanup",hr);
     if(!ok)return fail(15,tag,hr);
-    std::printf("RATL_P1D_OK mode=%s\n",mode);
+    if(::strstr(mode,"force") || ::strstr(mode,"delete")) {
+        // Explicit evidence of the originally observed HRESULT and
+        // whether the nested descendants survived. A baseline that
+        // starts behaving differently must fail, not be called repaired.
+        const int stale=(::strncmp(mode,"baseline-",9)==0)?1:0;
+        std::printf("RATL_P1D_OK mode=%s hr=0x%08lx stale=%d\n",
+                    mode,static_cast<unsigned long>(hr),stale);
+    } else {
+        std::printf("RATL_P1D_OK mode=%s\n",mode);
+    }
     return 0;
 }
 int main(int argc,char** argv) {
