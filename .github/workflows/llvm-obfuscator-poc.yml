@@ -27,6 +27,7 @@ jobs:
         run: |
           git clone https://github.com/eshard/obfuscator-llvm.git tools/llvm-obfuscator
           git -C tools/llvm-obfuscator checkout --detach ad26aa21b90cc5c5118d32114b674d1455f54168
+          git -C tools/llvm-obfuscator apply "$GITHUB_WORKSPACE/patches/llvm14-demote-phi.patch"
           cmake -S tools/llvm-obfuscator -B build-llvm-plugin -G Ninja \
             -DLLVM_DIR="$(llvm-config-14 --cmakedir)"
           cmake --build build-llvm-plugin --parallel 2
