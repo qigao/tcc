@@ -41,6 +41,13 @@ is **opt-in diagnostic**, never a substitute for physical device execution.
 - Fail-close on build, ABI, ELF, ownership, loader or JNI errors.
 
 The job is **skipped by default**. A skipped job does not qualify
-Android ARM64 runtime. The Mac software-TCG diagnostic can be requested
-separately via `workflow_dispatch` input `run_arm64_tcg`; success
-there would still be emulated Android ARM64, not native hardware.
+Android ARM64 runtime. The macOS software-TCG diagnostic is likewise
+disabled by default. While the workflow remains only in a Draft PR,
+it can be explicitly enabled for a trusted branch with repository
+variable `TCC_ANDROID_ARM64_TCG_DIAGNOSTIC=true`. A
+`workflow_dispatch` input `run_arm64_tcg` is also defined, but
+GitHub only accepts manual dispatch when this workflow file is present
+on the repository's **default branch**; do not merge the Draft PR
+merely to enable that diagnostic. Even successful TCG testing would
+establish emulated ARM64 Android guest execution, **not native physical
+device hardware qualification**.

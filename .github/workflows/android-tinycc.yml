@@ -108,7 +108,24 @@ jobs:
 
   android-arm64-emulator:
     name: Android ARM64 software TCG guest (opt-in, NOT hardware)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_arm64_tcg == true }}
+    # Workflow_dispatch requires this workflow to exist on the default
+    # branch. While PR #1 is Draft, allow an explicit repo variable opt-in
+    # on its trusted, repository-owned PR branch instead.
+    if: >-
+      ${{
+        (
+          github.event_name == 'workflow_dispatch' &&
+          inputs.run_arm64_tcg == true
+        ) ||
+        (
+          vars.TCC_ANDROID_ARM64_TCG_DIAGNOSTIC == 'true' &&
+          github.repository == 'qigao/tcc' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == 'qigao/tcc' &&
+          github.event.pull_request.user.login == 'qigao' &&
+          github.event.pull_request.head.ref == 'poc/tcc-llvm-mingw-atomic-threads-atl'
+        )
+      }}
     needs: [android-tcc-cross, android-apk-sandbox]
     runs-on: macos-15
     continue-on-error: true
