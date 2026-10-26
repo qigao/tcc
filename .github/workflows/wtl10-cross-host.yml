@@ -39,4 +39,5 @@ jobs:
           path: |
             build-wtl10-host/*.dll
             build-wtl10-host/*.exe
-          if-no-files-found: warn
+            build-wtl10-host/*.res.o
+          if-no-files-found: error

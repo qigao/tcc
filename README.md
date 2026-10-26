@@ -173,42 +173,21 @@ used. This proves **ad-hoc Hardened Runtime execution** only, not
 Developer ID identity, Apple notarization, an App Sandbox bundle or
 distribution to end users.
 
-## llvm-mingw Windows ATL/WTL ports
+## Windows WTL10 / OpenATL integration
 
-The Windows compiler POC clones two additional header-only codebases
-at pinned upstream commits: modern MIT clean-room
-[`kkhaike/openatl`](https://github.com/kkhaike/openatl) for llvm-mingw
-C++17 x64 and ARM64, and legacy
-[`waiting4love/WTL4MinGW`](https://github.com/waiting4love/WTL4MinGW)
-for its documented x86 MinGW compatibility only. Each codebase is
-built into an independent Windows DLL, and a real TinyCC-compiled
-**C** program calls its versioned `LoadLibrary/GetProcAddress` ABI.
-Both x64 OpenATL and x86 WTL4MinGW passed five native runtime calls;
-OpenATL also passed five times on **native Windows ARM64**.
+The only supported WTL qualification path in this POC is the pinned
+official WTL10 release plus OpenATL and llvm-mingw Clang++.
+WTL4MinGW / historical WTL8 compatibility, source patching and
+architecture-specific thunks have been removed instead of retained as
+a fallback. The unrelated RATL C-ABI baseline remains isolated.
 
-Do not mix OpenATL, WTL4MinGW and existing ReactOS RATL headers or
-C++ allocation/object layouts. OpenATL's current window-procedure
-thunk needs W^X hardening; WTL4MinGW's bundled file-level CPL
-notices require a separate redistribution/license audit despite its
-root MIT license. Implementation and reproducible test commands:
-[ATL_PORTS.md](docs/ATL_PORTS.md), tracked by
-[Issue #4](https://github.com/qigao/tcc/issues/4).
+Real Linux and macOS CI hosts must cross-build x64 and ARM64 Windows
+DLLs AND link the complete upstream resource-based SDI example, including
+the compiled .rc file. The PE machine and a nonempty resource directory
+are checked; resource and executable outputs are retained as artifacts.
+Real Windows x64 and native ARM64 test the isolated WTL10 DLL/TinyCC C
+interface. GUI/UX execution remains a separate, unqualified gate.
+OpenATL's RWX wndproc thunk is not qualified for production.
 
-## Preferred WTL application build: WTL10 + OpenATL
-
-A separate pinned Windows GUI track now combines **official WTL
-10.0.10320 headers** (Microsoft Public License) with the
-**clean-room OpenATL** C++17 subset under llvm-mingw. The full WTL10
-ZIP is integrity-checked and downloaded only by CI.
-
-The required native Windows x64 and ARM64 jobs run a real
-OpenATL/WTL10 C++ DLL from TinyCC C clients (five repetitions each),
-while required Linux/macOS host jobs cross-build x64/ARM64 Windows
-PE outputs and compile/link the author's full resource-based
-`wtltest` SDI GUI application. These are real Windows-target
-cross-compilations, **not** native GUI executions on Linux/macOS.
-
-The older WTL4MinGW (WTL8) port remains a separately isolated
-compatibility test with known license/security constraints.
 See [WTL10_OPENATL.md](docs/WTL10_OPENATL.md) and
 [Issue #4](https://github.com/qigao/tcc/issues/4).

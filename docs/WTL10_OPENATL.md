@@ -1,86 +1,46 @@
-# WTL 10.0 + OpenATL / llvm-mingw (preferred modern path)
+# Official WTL10 + OpenATL: single Windows WTL path
 
-## Why a new integration path?
+The only WTL source supported by this POC is official WTL 10.0.10320
+with OpenATL. WTL8/WTL4MinGW compatibility code has been deleted;
+there is no fallback and no sharing of ATL include trees.
+Clang++ owns all C++/COM/WTL objects and exports only a versioned C ABI.
+TinyCC remains a C compiler; no Windows GUI/C++ ABI support is claimed.
 
-[OpenATL](https://github.com/kkhaike/openatl) explicitly targets
-**WTL 10.0** with Clang/MinGW C++17. Its author maintains
-[wtltest](https://github.com/kkhaike/wtltest), a resource-based
-SDI/window/control demo. That is a stronger modern integration target
-than trying to upgrade the WTL8/Winx ATL runtime bundled in
-[WTL4MinGW](https://github.com/waiting4love/WTL4MinGW).
+## Immutable sources
 
-Keep all three checks independent:
-1. **OpenATL + WTL10** — preferred llvm-mingw Windows C++ application layer.
-2. **WTL4MinGW (WTL8)** — legacy x86/x64/ARM64 port regression only.
-3. **RATL** — separate ReactOS-derived ATL ABI reference.
+- OpenATL: https://github.com/kkhaike/openatl at 7b587f3e10f3f8d93a01522033de80007368bad5
+- WTL10 demo: https://github.com/kkhaike/wtltest at 63ba6a992cb3d79d56be66cd283f6615c6646b3d
+- WTL10 ZIP (official release mirror): Win32-WTL/WTL commit
+  065ef5597383c1231bd4892cf8e94331b29bdb97, blob
+  a9f9d84495aac2155b0fdb00fec0e421b0e75c90, SHA256
+  13de5cd7ed41454b8f287e9bcc4525234c6ac8c85905e4d4fe1a0776709fd78f
+- llvm-mingw: 20261020 UCRT, SHA256 pinned per Windows/Linux/macOS runner.
 
-The TinyCC bridge is a **C API**. WTL templates and exceptions
-compile under llvm-mingw Clang++, not TinyCC.
+WTL10 carries MS-PL notices; sources are fetched temporarily and
+checked against immutable pins, not vendored in this project.
 
-## Immutable upstream inputs
+## Mandatory evidence and known limits
 
-| Component | Source | Pin |
-|---|---|---|
-| OpenATL | https://github.com/kkhaike/openatl | 7b587f3e10f3f8d93a01522033de80007368bad5 |
-| WTL10 sample | https://github.com/kkhaike/wtltest | 63ba6a992cb3d79d56be66cd283f6615c6646b3d |
-| WTL10 10.0.10320 | https://github.com/Win32-WTL/WTL (official release mirror, originally SourceForge) | Mirror commit 065ef5597383c1231bd4892cf8e94331b29bdb97, blob a9f9d84495aac2155b0fdb00fec0e421b0e75c90 (Releases/WTL10_10320_Final.zip) |
-| llvm-mingw | Existing pinned toolchain | 20261020 UCRT |
+1. Windows x64 native TinyCC C client loads the Clang++ WTL10 DLL
+   five times; validates ABI, idle/message loop, COM ownership,
+   EDIT/BUTTON/ListView/TreeView wrappers and 64-bit item data.
+2. Windows ARM64 must verify PE machine/hash and execute the same
+   ABI client five times on a true ARM64 Windows runner.
+3. Genuine Linux and macOS hosts must independently use their pinned
+   llvm-mingw distributions to cross-build x64+ARM64 Windows DLLs,
+   compile actual upstream WTL10 SDI sources, and link the complete
+   SDI example with the resource compiler output for wtltest.rc.
+   Each executable must be 64-bit PE for the expected target and
+   contain a nonempty .rsrc directory. Both host jobs are blocking.
+4. Resource objects, linked .exe files and DLLs are CI artifacts.
+   Neither fsyntax-only nor linking a DLL alone meets this gate.
 
-The workflow fetches the ZIP at the pinned mirror commit, verifies
-the **full Git blob SHA** (not merely a filename) and extracts it into
-a temporary CI directory. No WTL header ZIP is committed to qigao/tcc.
-WTL10 uses **MS-PL**; retain that license and copyright notices.
-WTL4MinGW WTL8 has different CPL-era historical notices.
+A linked GUI executable is not evidence of interactive GUI operation.
+Message-map/GUI interaction, real resource display, window teardown,
+CFG/CET and security lifecycle require separately designed execution
+tests. OpenATL CWndProcThunk currently uses RWX pages, deliberately
+excluded from the limited hidden Win32 wrapper probe. Do not use it
+in a production GUI without W^X and platform security qualification.
 
-## Acceptance contract
-
-- On Windows x64 and ARM64 llvm-mingw: build C++17 DLL with only
-  OpenATL headers + extracted WTL10 headers (not WTL4MinGW/RATL).
-- Build a real TinyCC C client for the corresponding Windows ABI, load
-  a versioned C DLL and test WTL10 CMessageLoop/IdleHandler, native
-  EDIT/BUTTON/ListView/TreeView control wrappers, 64-bit item-data
-  retention, module apartment init and teardown.
-- Native Windows ARM64 **must execute**, not merely cross-compile.
-- A separate full WTL10 \`wtltest\` SDI/RC build is a compilation
-  target; do not claim GUI/UX runtime from linking alone.
-- Exclude unqualified OpenATL \`CWndProcThunk\` RWX executable memory.
-  This limited test creates raw USER32 parents and uses WTL wrappers;
-  actual WTL10 CWindowImpl thunk hardening is separate.
-- Keep PR #1 Draft and do not change Salts production compiler or ABI.
-
-## Completed qualification — October 26, 2026
-
-The **required** Windows x64/ARM64 interoperability workflow
-[`wtl10-openatl.yml`](../.github/workflows/wtl10-openatl.yml)
-retrieves WTL 10.0.10320 from the immutable release mirror, checks
-both its Git blob identity and SHA-256:
-`13de5cd7ed41454b8f287e9bcc4525234c6ac8c85905e4d4fe1a0776709fd78f`.
-
-The llvm-mingw C++17 provider, with actual WTL10 message loops and
-control wrappers, is exercised by real TinyCC C clients:
-**Windows x64 5/5**, **native Windows ARM64 5/5**.
-The native ARM64 job verifies CPU type, PE machine and SHA-256
-artifact hashes before running.
-
-The separate **required**
-[`wtl10-cross-host.yml`](../.github/workflows/wtl10-cross-host.yml)
-checks both host toolchain release hashes and uses genuine
-**Linux** and **macOS** host processes to cross-compile Windows
-x64/ARM64 DLLs with OpenATL and WTL10. It also builds and links the
-author's complete WTL10 `wtltest` SDI GUI, including the Win32
-resources (`.rc`), for both target architectures.
-Verified initial cross-host success: [CI #40315361815](https://github.com/qigao/tcc/actions/runs/40315361815).
-
-The interactive full SDI GUI has **not** been exercised in native
-UI automation, and OpenATL's window-procedure thunk can request
-PAGE_EXECUTE_READWRITE; do not promote that full message-map
-implementation to hardened product use until W^X/CFG/CET/ARM64 and
-window callback lifecycle qualification passes. Our required
-native runtime test deliberately uses a raw USER32 parent and
-WTL10 control wrappers, without invoking that thunk.
-
-WTL 10.0 headers are **MS-PL** licensed and were not vendored;
-the full WTL10 ZIP is downloaded for CI only. WTL4MinGW 8.x
-continues as a separately pinned, legacy port and requires its
-own source-file license review. Do not mix their ATL headers or
-C++ runtime objects with OpenATL in one translation unit.
+This is a standalone compiler experiment. PR #1 remains Draft;
+no Salts compiler/ABI/production switch or release is authorized.
