@@ -113,3 +113,26 @@ WTL8's full resource-based GUI application. More complete COM
 `QueryInterface`, message-map dispatch, window teardown and license
 compliance remain Issue #4 gates. The pinned compatibility patch
 modifies only CI's temporary checkout, not an upstream Git repository.
+
+## Refactoring WTL4MinGW to x64/ARM64 (qualification branch)
+
+The legacy Winx ATL backend has hard-coded x86 machine-code thunks and
+32-bit WndProc/this pointer truncation. The new fail-closed
+`scripts/wtl4mingw-win64-port.py` temporarily transforms the exact
+pinned detached WTL4MinGW checkout in CI, never copying upstream
+license-bearing headers into qigao/tcc. Its proposed port:
+- replaces CWindowImpl's 32-bit WNDPROC storage with pointer-sized
+  `GetWindowLongPtr/SetWindowLongPtr` and `UINT_PTR` IDs;
+- creates independent per-window x86, x64 or AArch64 thunks using a
+  **PAGE_READWRITE → PAGE_EXECUTE_READ** transition and
+  `FlushInstructionCache`, avoiding persistent RWX pages;
+- preserves the separate `_AtlCreateWndData` handoff and uses
+  non-copyable thunk ownership and fail-closed allocation;
+- executes a WTL8 `CWindowImpl` real WM_APP message map and verifies
+  that the callback page is RX, then destroys the HWND before releasing
+  the C++ module.
+
+The architecture-specific instruction layout, CFG/CET and concurrent
+lifecycle remain separate security gates; do not claim production GUI
+readiness until native x64/ARM64 runtime CI and cancellation/WM_NCDESTROY
+stress pass. The licensing review still blocks redistribution.

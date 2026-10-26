@@ -182,6 +182,36 @@ jobs:
           $tcc32 = Get-ChildItem tools/tinycc-win -Recurse -Filter i386-win32-tcc.exe | Select-Object -First 1
           if (-not $tcc64 -or -not $tcc32) { throw 'TinyCC drivers missing' }
           ./scripts/windows-atl-ports.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -TinyCC64 $tcc64.FullName -TinyCC32 $tcc32.FullName -OpenATLRoot (Resolve-Path tools/openatl).Path -WTL4MinGWRoot (Resolve-Path tools/wtl4mingw).Path -Port wtl4mingw
+      - name: WTL4MinGW Windows x64 pointer/Win32 thunk refactor diagnostic
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/wtl4mingw-win64-port.py tools/wtl4mingw
+          if ($LASTEXITCODE -ne 0) { throw 'Win64 WTL8 source refactor failed' }
+          $cc = Join-Path $env:LLVM_MINGW_BIN 'x86_64-w64-mingw32-clang++.exe'
+          $tcc = Get-ChildItem tools/tinycc-win -Recurse -Filter tcc.exe | Select-Object -First 1
+          if (-not $tcc -or -not (Test-Path $cc)) { throw 'Pinned x64 drivers unavailable' }
+          $args_ = @('-shared','-std=c++11','-O0','-include','algorithm',
+            '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
+            '-fms-extensions','-Itools/wtl4mingw/atlport/include',
+            '-Itools/wtl4mingw/stdext/include','-Itools/wtl4mingw/wtl/include',
+            'tests/atl_ports/wtl4mingw_win64_bridge.cpp',
+            '-o','build-interop/poc_wtl4mingw_x64.dll','-static',
+            '-lole32','-loleaut32','-lcomctl32','-lshlwapi',
+            '-luuid','-lgdi32','-luser32','-ladvapi32')
+          & $cc @args_
+          if ($LASTEXITCODE -ne 0) { throw 'WTL4MinGW x64 DLL compile failed' }
+          & $tcc.FullName 'tests/atl_ports/client.c' '-o' 'build-interop/wtl4mingw_x64_client.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'TinyCC x64 C client compile failed' }
+          Push-Location build-interop
+          try {
+            for ($i = 1; $i -le 5; $i++) {
+              & ./wtl4mingw_x64_client.exe poc_wtl4mingw_x64.dll
+              if ($LASTEXITCODE -ne 0) { throw "WTL4MinGW x64 runtime failed: $LASTEXITCODE" }
+            }
+          } finally { Pop-Location }
+          Write-Host 'WTL4MinGW x64 CWindowImpl callback RX thunk 5/5 PASS'
       - name: Windows ARM64 TinyCC and llvm-mingw required PE compile (no runtime)
         shell: pwsh
         run: |
