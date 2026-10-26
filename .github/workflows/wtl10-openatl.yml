@@ -222,8 +222,17 @@ jobs:
             if ($rc -ne 0 -or $actual -cne $expectedP1B) {
               throw "Native ARM64 OpenATL COM P1-B failed run $i exit=$($rc): $actual"
             }
+            foreach ($mode in @('invalid','duplicate','capacity')) {
+              $negOut = @(& ./wtl10-arm64/atl_com_p1b_openatl_arm64.exe $mode 2>&1)
+              $negRC = $LASTEXITCODE
+              $negText = ($negOut | ForEach-Object { "$_".Trim() }) -join ''
+              $negExpected = "ATL_COM_P1B_NEG_OK mode=$mode"
+              if ($negRC -ne 0 -or $negText -cne $negExpected) {
+                throw "Native ARM64 P1-B $mode rejection failed repetition $i exit=$($negRC): $negText"
+              }
+            }
           }
-          Write-Host 'Native ARM64 OpenATL COM P1-B two-TU map and atomic rollback 5/5 PASS'
+          Write-Host 'Native ARM64 OpenATL COM P1-B normal/invalid/duplicate/capacity map 5/5 PASS'
           $expectedSandbox = 'ATL_REG_SANDBOX_OK isolated=1 redirect=1 rollback=1 restored=1 clean=1 stub_failclosed=1'
           for ($i = 1; $i -le 5; $i++) {
             $out = @(& ./wtl10-arm64/atl_registry_sandbox_arm64.exe 2>&1)

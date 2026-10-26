@@ -55,5 +55,14 @@ for ($i=1; $i -le 5; ++$i) {
   if ($rc -ne 0 -or $observed -cne $expected) {
     throw "OpenATL native x64 COM P1-B run $i failed exit=$($rc): $observed"
   }
+  foreach ($mode in @('invalid','duplicate','capacity')) {
+    $negative = @(& $x64 $mode 2>&1)
+    $negativeRC = $LASTEXITCODE
+    $negativeText = ($negative | ForEach-Object { "$_".Trim() }) -join ''
+    $negativeExpected = "ATL_COM_P1B_NEG_OK mode=$mode"
+    if ($negativeRC -ne 0 -or $negativeText -cne $negativeExpected) {
+      throw "OpenATL native x64 P1-B $mode rejection failed repetition $i exit=$($negativeRC): $negativeText"
+    }
+  }
 }
 Write-Host 'OpenATL native x64 P1-B automatic map/partial rollback/revoke 5/5 PASS'

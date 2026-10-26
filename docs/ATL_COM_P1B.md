@@ -24,3 +24,5 @@ upstream remains unchanged, and RATL LGPL/GPL code is **not copied**.
   **Actual persistent registry, RGS parsing, DllRegisterServer, secure
   private hive and failure recovery are not implemented**. This test does
   not qualify a production COM server or Microsoft ATL parity.
+
+Negative admission paths are required on *native* Windows x64/ARM64 in **separate processes**: malformed null map entry, duplicate CLSID, and the 17th entry in a 16-entry bounded map. After any rejection, the persistent process-local error must block both class lookup and class registration; successful normal-test runs must not share state with these poisoned-mode runs.
