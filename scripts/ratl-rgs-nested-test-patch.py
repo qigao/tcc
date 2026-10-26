@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# Portions of original/patched code excerpts below originate from:
+# ReactOS ATL statreg.h, Copyright 2005 Jacek Caban,
+# Copyright 2009 Andrew Hill. See RATL COPYING.LIB and upstream source:
+# https://github.com/katahiromz/RATL/blob/2e2efa182d7c6ee9037454d23780991fb8543084/include/atl/statreg.h
 """Strictly test-only RATL P1-D recursive deletion patch for isolated checkout.
 
 Never modifies pinned RATL source, vendored OpenATL, or installed SDK.

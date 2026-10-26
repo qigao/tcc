@@ -64,3 +64,16 @@ excludes `atl_com_ratl_*.exe`, `atl_com_p1_ratl_*.exe`,
 required CI logs and OpenATL/WTL10 PE evidence. The Windows ARM64 artifact
 already contains only OpenATL/WTL10 binaries. This does not replace a
 separate license assessment if anyone later distributes RATL test binaries.
+
+### File-specific license notice
+
+The test-only Python patch `scripts/ratl-rgs-nested-test-patch.py`
+contains short excerpts from pinned ReactOS ATL `statreg.h`,
+Copyright 2005 Jacek Caban and 2009 Andrew Hill, licensed
+**LGPL-2.1-or-later**. This file now carries a file-specific SPDX
+identifier and upstream attribution, separate from MIT OpenATL.
+The patched temporary RATL checkout retains its original licensing.
+See https://github.com/katahiromz/RATL/blob/2e2efa182d7c6ee9037454d23780991fb8543084/include/atl/statreg.h
+and https://github.com/katahiromz/RATL/blob/2e2efa182d7c6ee9037454d23780991fb8543084/COPYING.LIB.
+No RATL implementation has been vendored into the OpenATL headers or
+released in WTL10 SDK artifacts.
