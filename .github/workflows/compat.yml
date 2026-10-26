@@ -115,6 +115,24 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows compile failed' }
           ctest --test-dir build-win --output-on-failure
           if ($LASTEXITCODE -ne 0) { throw 'Windows runtime tests failed' }
+      - name: Windows i686 real C ABI and stack balance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $clang32 = Join-Path $env:LLVM_MINGW_BIN 'i686-w64-mingw32-clang.exe'
+          if (-not (Test-Path $clang32)) { throw 'i686 compiler missing from pinned toolchain' }
+          New-Item -ItemType Directory -Force build-x86 | Out-Null
+          & $clang32 -std=c11 -shared -O0 tests/win_x86/abi_exports.c -o build-x86/poc_x86_abi.dll
+          if ($LASTEXITCODE -ne 0) { throw 'i686 DLL compile failed' }
+          & $clang32 -std=c11 -O0 tests/win_x86/abi_client.c -o build-x86/poc_x86_abi_client.exe
+          if ($LASTEXITCODE -ne 0) { throw 'i686 C client compile failed' }
+          Push-Location build-x86
+          try {
+            for ($i = 0; $i -lt 5; ++$i) {
+              & ./poc_x86_abi_client.exe
+              if ($LASTEXITCODE -ne 0) { throw "i686 stack/ABI test failed ($LASTEXITCODE)" }
+            }
+          } finally { Pop-Location }
       - name: Windows TinyCC, RATL and obfus.h required runtime
         shell: pwsh
         run: |

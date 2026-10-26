@@ -54,13 +54,14 @@ int poc_atomic64_backend_init(const char *path) {
 int poc_atomic64_backend_shutdown(void) {
     HMODULE old = module;
     if (!old) return -1;
+    if (!FreeLibrary(old)) return -1;
     module = NULL;
     native_load = NULL;
     native_store = NULL;
     native_exchange = NULL;
     native_add = NULL;
     native_cas = NULL;
-    return FreeLibrary(old) ? 0 : -1;
+    return 0;
 }
 static void require_backend(void) {
     if (!module) ExitProcess(125);

@@ -48,7 +48,13 @@ int poc_thread_join(poc_thread *t, int *result) {
 int poc_mutex_init(poc_mutex *m) {
     if (!m || m->active) return -1;
 #ifdef _WIN32
-    if (!InitializeCriticalSectionEx(&m->native, 0, 0)) return -1;
+    /* TinyCC SDKs may not declare InitializeCriticalSectionEx. Resolve the
+     * documented Win32 API explicitly with its real calling convention, and
+     * reject unsupported hosts rather than relying on an implicit declaration. */
+    typedef BOOL (WINAPI *init_cs_fn)(LPCRITICAL_SECTION, DWORD, DWORD);
+    HMODULE kernel = GetModuleHandleA("kernel32.dll");
+    init_cs_fn initialize = kernel ? (init_cs_fn)GetProcAddress(kernel, "InitializeCriticalSectionEx") : NULL;
+    if (!initialize || !initialize(&m->native, 0, 0)) return -1;
 #else
     if (pthread_mutex_init(&m->native, NULL) != 0) return -1;
 #endif

@@ -44,6 +44,10 @@ The isolated thread test checks CAS failure writeback, 64-bit arithmetic above 4
 
 `include/poc/threads.h` is an intentionally limited `pthread`/Win32 adapter, not a drop-in C11 `threads.h` or a stable public ABI. It provides create/join, mutex, condition-variable waits/broadcast, and destructor-backed thread-specific storage. The bounded FIFO test runs four producers, four consumers, 10,000 distinct payloads and a queue capacity of seven, then checks exact-once consumption, closing wakeups, rejected late writes, return values and exactly eight TLS destructor callbacks. Live thread, mutex, condition and TLS objects must never move or cross DLL/compiler boundaries. They must be destroyed or joined only by the owning test.
 
+## Windows i686 C ABI probe
+
+The Windows job separately builds a **real 32-bit PE** DLL/client with llvm-mingw's `i686-w64-mingw32-clang`, runs them on Windows, and checks `cdecl` vs `stdcall` entry points, stack balance, version handshake and caller/DLL struct layout. The x86 test does **not** claim Windows TinyCC x86 compatibility; that requires a distinct native i686 TCC toolchain and tests.
+
 ## Windows quick start
 
 Use **llvm-mingw UCRT x86_64** and **TinyCC for Windows**. Configure/build/test the CMake suite with llvm-mingw's `x86_64-w64-mingw32-clang.exe`; run `scripts/windows-interop.ps1` with pinned compiler roots, RATL tree and `obfus.h` header to exercise actual mixed-compiler executables and DLLs. The Windows script compiles TinyCC clients and performs runtime tests; linking C++ objects into TCC is not permitted.

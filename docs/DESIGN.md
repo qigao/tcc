@@ -35,6 +35,10 @@ A separate eight-byte slot implements `load/store/exchange/fetch_add/CAS`; point
 
 The `poc_thread`, `poc_mutex`, `poc_condition` and `poc_tss` types are **private ABI test objects**. No fields may cross compilers or DSOs; callers zero-initialize the storage and keep its address stable. The callback result is published before successful join and read after join. Closing the queue holds its mutex and broadcasts to all waiters. A separate capacity-one fixture deterministically parks an admitted writer on a full queue and an admitted reader on an empty queue, then closes the owner while each is actually waiting, verifies exact fail-closed outcomes, and checks absence of phantom reads/writes. Thread-specific destructor callbacks must run before the owner deletes its key, with Win32 FLS and POSIX pthread implementations independently exercised. Destroying with blocked waiters or racing writers remains invalid; later tests will add explicit busy-error policies rather than silently masking undefined lifetime.
 
+## Separate Windows i686 ABI gate
+
+The LLVM-mingw i686 toolchain builds and executes a 32-bit Windows PE DLL/client. A dedicated caller checks exported `cdecl`/`stdcall` function names, both calling conventions, ESP restoration and a layout handshake for a fixed-width C structure. This test is independent of the 64-bit Atomic backend. It qualifies only llvm-mingw i686, **not** TinyCC's 32-bit assembler/linker or full ATL/COM support.
+
 ## RATL and Windows C ABI
 
 A C++ DLL compiled by llvm-mingw may instantiate RATL templates internally and export `extern "C" __cdecl int poc_ratl_sum(...)`. The TinyCC consumer resolves that export with `LoadLibraryA` + `GetProcAddress`. Each module creates and destroys its own objects; the C boundary passes fixed-size arrays. On x86 the calling convention and exported name decoration must be checked independently; initial scope is x86-64. RATL is LGPL-2.1-or-later and remains an external pinned checkout; do not vendor without attribution and license review.
