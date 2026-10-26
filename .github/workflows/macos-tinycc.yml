@@ -68,6 +68,24 @@ jobs:
           for test in atomic32_test atomic_small_test atomic64_test thread_contract; do
             for i in 1 2 3 4 5; do "./build-macos/$test"; done
           done
+      - name: Hardened Runtime ad-hoc signing and strict dylib load (diagnostic)
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          TCC="$GITHUB_WORKSPACE/tools/tcc-installed/bin/tcc"
+          "$TCC" -Iinclude tests/platform/macos_hardened.c \
+            -o build-macos/macos_hardened
+          codesign --force --options runtime --timestamp=none --sign - \
+            build-macos/libpoc_atomic_darwin.dylib
+          codesign --force --options runtime --timestamp=none --sign - \
+            build-macos/macos_hardened
+          codesign --verify --strict --verbose=2 build-macos/macos_hardened
+          codesign --verify --strict --verbose=2 build-macos/libpoc_atomic_darwin.dylib
+          codesign --display --verbose=4 build-macos/macos_hardened
+          for i in 1 2 3 4 5; do \
+            ./build-macos/macos_hardened "$PWD/build-macos/libpoc_atomic_darwin.dylib"; \
+          done
       - name: Save platform evidence
         if: always()
         shell: bash
