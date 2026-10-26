@@ -127,25 +127,25 @@ static int factory_contract() {
     if(factory->QueryInterface(IID_IClassFactory,reinterpret_cast<void**>(&iface))!=S_OK ||
        iface!=static_cast<IClassFactory*>(factory))
         return bad(22,"factory_query_identity");
-    if(factory->CreateInstance(nullptr,IID_IPersist,nullptr)!=E_POINTER)
+    if(static_cast<IClassFactory*>(factory)->CreateInstance(nullptr,IID_IPersist,nullptr)!=E_POINTER)
         return bad(23,"factory_null_output");
     IUnknown* outer=static_cast<IClassFactory*>(factory);
     void* result=reinterpret_cast<void*>(static_cast<uintptr_t>(1));
-    if(factory->CreateInstance(outer,IID_IPersist,&result)!=CLASS_E_NOAGGREGATION ||
+    if(static_cast<IClassFactory*>(factory)->CreateInstance(outer,IID_IPersist,&result)!=CLASS_E_NOAGGREGATION ||
        result!=nullptr)
         return bad(24,"factory_nonagg_interface");
     result=reinterpret_cast<void*>(static_cast<uintptr_t>(1));
-    if(factory->CreateInstance(outer,IID_IUnknown,&result)!=CLASS_E_NOAGGREGATION ||
+    if(static_cast<IClassFactory*>(factory)->CreateInstance(outer,IID_IUnknown,&result)!=CLASS_E_NOAGGREGATION ||
        result!=nullptr)
         return bad(25,"creator_nonaggregation");
 
     result=reinterpret_cast<void*>(static_cast<uintptr_t>(1));
-    if(factory->CreateInstance(nullptr,IID_IClassFactory,&result)!=E_NOINTERFACE ||
+    if(static_cast<IClassFactory*>(factory)->CreateInstance(nullptr,IID_IClassFactory,&result)!=E_NOINTERFACE ||
        result!=nullptr || Model::created!=1 || Model::destroyed!=1)
         return bad(26,"factory_unknown_iid_rollback");
 
     IPersist* value=nullptr;
-    if(factory->CreateInstance(nullptr,IID_IPersist,
+    if(static_cast<IClassFactory*>(factory)->CreateInstance(nullptr,IID_IPersist,
        reinterpret_cast<void**>(&value))!=S_OK || !value)
         return bad(27,"factory_create");
     value->Release();
