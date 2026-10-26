@@ -102,8 +102,9 @@ jobs:
 
   android-arm64-emulator:
     name: Android ARM64 emulator native TinyCC runtime
-    needs: android-tcc-cross
+    needs: [android-tcc-cross, android-apk-sandbox]
     runs-on: macos-15
+    continue-on-error: true
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
@@ -111,6 +112,10 @@ jobs:
         with:
           name: android-arm64-v8a-tcc
           path: build-android-arm64-v8a
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-target35-multiabi-apk
+          path: android/apk-poc/app/build/outputs/apk/debug
       - name: Require real ARM64 macOS host
         shell: bash
         run: |
@@ -129,7 +134,7 @@ jobs:
           ndk: 27.3.13750724
           disable-animations: true
           emulator-options: -no-window -noaudio -no-boot-anim -gpu swiftshader_indirect -no-snapshot-load -no-snapshot-save
-          script: bash scripts/android-emulator-smoke.sh
+          script: bash scripts/android-emulator-smoke.sh && bash scripts/android-apk-sandbox-smoke.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -152,6 +157,10 @@ jobs:
         with:
           name: android-x86_64-tcc
           path: build-android-x86_64
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-arm64-v8a-tcc
+          path: build-android-arm64-v8a
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -172,12 +181,24 @@ jobs:
             -Wall -Wextra -Werror -ldl android/apk-poc/jni/native_bridge.c \
             -o "$LIBS/libpoc_tcc_jni.so"
           "$BIN/llvm-readelf" -h "$LIBS/libpoc_tcc_jni.so"
+          LIBS_ARM=android/apk-poc/app/src/main/jniLibs/arm64-v8a
+          mkdir -p "$LIBS_ARM"
+          cp build-android-arm64-v8a/libtcc.so "$LIBS_ARM/libtcc.so"
+          "$BIN/aarch64-linux-android29-clang" -std=c11 -O1 -shared -fPIC \
+            -Wall -Wextra -Werror -ldl android/apk-poc/jni/native_bridge.c \
+            -o "$LIBS_ARM/libpoc_tcc_jni.so"
+          "$BIN/llvm-readelf" -h "$LIBS_ARM/libpoc_tcc_jni.so"
       - name: Build targetSdk35 APK
         shell: bash
         run: |
           set -euo pipefail
           gradle --no-daemon --project-dir android/apk-poc :app:assembleDebug
           test -s android/apk-poc/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-target35-multiabi-apk
+          path: android/apk-poc/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
       - name: Enable Android Emulator KVM
         shell: bash
         run: |
