@@ -18,7 +18,9 @@
 #include <atlbase.h>
 #include <atlapp.h>
 #include <atlwin.h>
-#include <atlctrls.h>
+// atlctrls.h is an optional later gate: this pinned WTL8 copy
+// redeclares UNDONAMEID and tree-view classes from modern MinGW CRT.
+// Here we qualify the independent WTL CAppModule / CMessageLoop first.
 
 WTL::CAppModule _Module;
 

@@ -28,7 +28,7 @@ Push-Location $bin
 try {
   if ($Port -eq 'both' -or $Port -eq 'openatl') {
   $openInc = Join-Path $OpenATLRoot 'include'
-  Invoke-Checked $cc64 @('-shared','-std=c++17','-O0',
+  Invoke-Checked $cc64 @('-shared','-std=c++17','-O0','-DUNICODE','-D_UNICODE',
     "-I$openInc", (Join-Path $source 'openatl_bridge.cpp'),
     '-o','poc_openatl.dll','-static',
     '-loleaut32','-lole32','-lcomctl32','-lshlwapi','-luuid','-luser32')
@@ -42,7 +42,7 @@ try {
   $atlport = Join-Path $WTL4MinGWRoot 'atlport/include'
   $wtlinc = Join-Path $WTL4MinGWRoot 'wtl/include'
   $stdext = Join-Path $WTL4MinGWRoot 'stdext/include'
-  Invoke-Checked $cc32 @('-shared','-std=c++11','-O0',
+  Invoke-Checked $cc32 @('-shared','-std=c++11','-O0','-include','algorithm',
     '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
     '-fms-extensions', "-I$atlport", "-I$stdext", "-I$wtlinc",
     (Join-Path $source 'wtl4mingw_bridge.cpp'),

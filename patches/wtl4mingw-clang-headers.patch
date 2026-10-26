@@ -1,0 +1,12 @@
+diff --git a/atlport/include/atlbase.h b/atlport/include/atlbase.h
+--- a/atlport/include/atlbase.h
++++ b/atlport/include/atlbase.h
+@@ -713,7 +713,7 @@
+ 	while (pEntries->pFunc != NULL)
+ 	{
+ 		BOOL bBlind = (pEntries->piid == NULL);
+-		if (bBlind || InlineIsEqualGUID(*(pEntries->piid), iid))
++		if (bBlind || ATL::InlineIsEqualGUID(*(pEntries->piid), iid))
+ 		{
+ 			if (pEntries->pFunc == _ATL_SIMPLEMAPENTRY) //offset
+ 			{

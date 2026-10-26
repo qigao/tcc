@@ -162,6 +162,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WTL4MinGW checkout failed' }
           if ((git -C tools/openatl rev-parse HEAD) -ne '7b587f3e10f3f8d93a01522033de80007368bad5') { throw 'OpenATL HEAD mismatch' }
           if ((git -C tools/wtl4mingw rev-parse HEAD) -ne '47dc3c0ff0e44beb8674b6f59533a31c3e08f2a5') { throw 'WTL4MinGW HEAD mismatch' }
+          # Explicitly scope legacy Clang compatibility to this detached checkout.
+          git -C tools/wtl4mingw apply "$env:GITHUB_WORKSPACE/patches/wtl4mingw-clang-headers.patch"
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned WTL8 compatibility patch failed' }
           if (!(Test-Path tools/openatl/LICENSE) -or !(Test-Path tools/wtl4mingw/LICENSE)) { throw 'Missing licenses' }
       - name: OpenATL C++17 x64 TinyCC C-ABI diagnostic
         continue-on-error: true
