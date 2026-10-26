@@ -32,6 +32,7 @@ try {
   Invoke-Checked python @('scripts/openatl-wx-hardening.py', 'tools/wtl10-openatl')
   Invoke-Checked python @('scripts/openatl-com-p1-hardening.py', 'tools/wtl10-openatl')
   Invoke-Checked python @('scripts/openatl-com-p1b-map.py', 'tools/wtl10-openatl')
+  Invoke-Checked python @('scripts/openatl-com-p1c-registrar.py', 'tools/wtl10-openatl')
   git clone --quiet https://github.com/kkhaike/wtltest.git tools/wtl10-test
   if ($LASTEXITCODE -ne 0) { throw 'WTL10 demo clone failed' }
   Invoke-Checked git @('-C','tools/wtl10-test','checkout','--detach',$testHead)
