@@ -7,6 +7,7 @@
 #endif
 #include <windows.h>
 #include <objidl.h>
+#include <ocidl.h>  // IObjectWithSite used by OpenATL's atlcom.h
 #include <cstdio>
 #include <atlbase.h>
 #include <atlcom.h>
