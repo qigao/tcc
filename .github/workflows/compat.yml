@@ -198,8 +198,32 @@ jobs:
             'tests/thread_contract.c',
             '-o', 'build-arm64-win/thread_contract_llvm_arm64.exe')
           Assert-Arm64-PE 'build-arm64-win/thread_contract_llvm_arm64.exe'
+          # ARM64 DLL provider is all native llvm-mingw C; the TinyCC ARM64
+          # client uses LoadLibrary/GetProcAddress and a bounded lease owner.
+          Invoke-Checked $clangArm @('-std=c11', '-O2', '-shared', '-Iinclude',
+            'src/atomic/win64_dll_exports.c', 'src/atomic/gnu_atomic64.c',
+            '-o', 'build-arm64-win/poc_atomic64_win.dll')
+          Assert-Arm64-PE 'build-arm64-win/poc_atomic64_win.dll'
+          Invoke-Checked $clangArm @('-std=c11', '-shared',
+            'tests/win_x64/bad_abi.c',
+            '-o', 'build-arm64-win/poc_atomic64_badabi.dll')
+          Assert-Arm64-PE 'build-arm64-win/poc_atomic64_badabi.dll'
+          Invoke-Checked $tccArm.FullName @('-Iinclude',
+            '-DPOC_ATOMIC64_EXTERNAL_DLL=1',
+            'src/atomic/win64_dll_client.c', 'src/threads/threads.c',
+            'tests/atomic_small_thread.c',
+            '-o', 'build-arm64-win/atomic_small_tcc_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/atomic_small_tcc_arm64.exe'
+          Invoke-Checked $tccArm.FullName @('-Iinclude',
+            '-DPOC_ATOMIC64_EXTERNAL_DLL=1',
+            'src/atomic/win64_dll_client.c', 'src/atomic/ptr64.c',
+            'src/threads/threads.c', 'tests/atomic64_thread.c',
+            '-o', 'build-arm64-win/atomic64_tcc_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/atomic64_tcc_arm64.exe'
           $manifest = @{}
-          Get-ChildItem build-arm64-win -Filter *.exe | ForEach-Object {
+          Get-ChildItem build-arm64-win -File | Where-Object {
+            $_.Extension -in @('.exe', '.dll')
+          } | ForEach-Object {
             $manifest[$_.Name] = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           }
           $manifest | ConvertTo-Json -Depth 5 | Set-Content build-arm64-win/manifest.json -Encoding utf8
@@ -284,9 +308,12 @@ jobs:
             'thread_contract_tcc_arm64.exe',
             'thread_shutdown_overlap_tcc_arm64.exe',
             'atomic_thread_llvm_arm64.exe',
-            'thread_contract_llvm_arm64.exe'
+            'thread_contract_llvm_arm64.exe',
+            'atomic_small_tcc_arm64.exe',
+            'atomic64_tcc_arm64.exe'
           )
-          foreach ($name in $names) {
+          $dlls = @('poc_atomic64_win.dll', 'poc_atomic64_badabi.dll')
+          foreach ($name in ($names + $dlls)) {
             $path = (Resolve-Path (Join-Path 'arm64-bin' $name)).Path
             [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
             $pe = [BitConverter]::ToInt32($bytes, 0x3c)
@@ -297,7 +324,11 @@ jobs:
             }
             $sha = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($sha -ne $manifest[$name]) { throw "Artifact SHA mismatch: $name" }
-            $repeat = if ($name -like '*thread*') { 10 } else { 5 }
+          }
+          foreach ($name in $names) {
+            $path = (Resolve-Path (Join-Path 'arm64-bin' $name)).Path
+            $repeat = if ($name -like '*thread*' -or
+                          $name -like 'atomic*_tcc_arm64.exe') { 10 } else { 5 }
             for ($i = 1; $i -le $repeat; ++$i) {
               & $path
               if ($LASTEXITCODE -ne 0) {
