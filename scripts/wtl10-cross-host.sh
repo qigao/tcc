@@ -36,10 +36,10 @@ for arch in x86_64 aarch64; do
   FLAGS=(-std=c++17 -O0 -DUNICODE -D_UNICODE
     -D_WIN32_WINNT=0x0601 -DWINVER=0x0601 -D_WIN32_IE=0x0601
     "-I$ATL_INC" "-I$WTL_INC" "-I$TEST_DIR")
-  "$CC" ${FLAGS[@]} -fsyntax-only \
+  "$CC" "${FLAGS[@]}" -fsyntax-only \
     tests/wtl10/openatl_wtl10_bridge.cpp "$TEST_DIR/main.cpp"
   OUT="build-wtl10-host/poc_openatl_wtl10_$arch.dll"
-  "$CC" ${FLAGS[@]} -shared \
+  "$CC" "${FLAGS[@]}" -shared \
     tests/wtl10/openatl_wtl10_bridge.cpp -o "$OUT" \
     -static -loleaut32 -lole32 -luuid -lcomctl32 -lgdi32 -luser32 \
     -lshell32 -lshlwapi -lcomdlg32 -luxtheme -lmsimg32
