@@ -2,6 +2,12 @@ name: Android TinyCC NDK/Bionic qualification
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_arm64_tcg:
+        description: 'Opt into slow software-emulated ARM64 Android guest diagnostic'
+        type: boolean
+        required: false
+        default: false
 permissions:
   contents: read
 jobs:
@@ -101,7 +107,8 @@ jobs:
           if-no-files-found: warn
 
   android-arm64-emulator:
-    name: Android ARM64 emulator native TinyCC runtime
+    name: Android ARM64 software TCG guest (opt-in, NOT hardware)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_arm64_tcg == true }}
     needs: [android-tcc-cross, android-apk-sandbox]
     runs-on: macos-15
     continue-on-error: true
@@ -227,4 +234,71 @@ jobs:
           path: |
             build-android-x86_64/adb-apk*.txt
             build-android-x86_64/android_apk_native_tcc.o
+          if-no-files-found: warn
+
+  android-arm64-hardware:
+    name: Android ARM64 physical-device compiler and APK JNI acceptance
+    # Self-hosted devices are highly sensitive. Never admit fork PR code.
+    # Set repository variable TCC_ANDROID_ARM64_DEVICE_ENABLED=true only
+    # after attaching an isolated, trusted ARM64 Android test device.
+    if: >-
+      ${{
+        vars.TCC_ANDROID_ARM64_DEVICE_ENABLED == 'true' &&
+        github.repository == 'qigao/tcc' &&
+        (
+          (
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == 'qigao/tcc' &&
+            github.event.pull_request.user.login == 'qigao' &&
+            github.event.pull_request.head.ref == 'poc/tcc-llvm-mingw-atomic-threads-atl'
+          ) ||
+          (
+            github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/poc/tcc-llvm-mingw-atomic-threads-atl'
+          )
+        )
+      }}
+    needs: [android-tcc-cross, android-apk-sandbox]
+    runs-on: [self-hosted, linux, x64, android-arm64-device]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-arm64-v8a-tcc
+          path: build-android-arm64-v8a
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-target35-multiabi-apk
+          path: android/apk-poc/app/build/outputs/apk/debug
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android platform tools and pinned NDK for real device
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install 'platform-tools' 'ndk;27.3.13750724'
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:?Android SDK missing}}"
+          test -x "$SDK/platform-tools/adb"
+          test -x "$SDK/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          echo "ANDROID_NDK_HOME=$SDK/ndk/27.3.13750724" >> "$GITHUB_ENV"
+      - name: Admit real ARM64 USB Android device and run object/JNI contract
+        shell: bash
+        env:
+          ANDROID_TEST_ABI: arm64-v8a
+          ANDROID_ARM64_HARDWARE: '1'
+          ANDROID_SERIAL: ${{ vars.TCC_ANDROID_ARM64_SERIAL }}
+        run: |
+          set -euo pipefail
+          bash scripts/android-arm64-device-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-arm64-physical-device-tcc-evidence
+          path: |
+            build-android-arm64-v8a/adb*.txt
+            build-android-arm64-v8a/*.o
           if-no-files-found: warn

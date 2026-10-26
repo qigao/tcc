@@ -6,7 +6,11 @@ ABI="${ANDROID_TEST_ABI:-x86_64}"
 case "$ABI" in
   x86_64) TRIPLE=x86_64-linux-android; ELF_MACHINE='Advanced Micro Devices X86-64'; GUEST_MACHINE=x86_64 ;;
   arm64-v8a) TRIPLE=aarch64-linux-android; ELF_MACHINE='AArch64'; GUEST_MACHINE=aarch64
-    test "$(uname -m)" = arm64 || { echo 'ARM64 Apple Silicon host required' >&2; exit 2; } ;;
+    # Host ARM64 is only needed for the Apple-Silicon emulator case.
+    # A real Android ARM64 device may be attached to a Linux x86-64 host.
+    if [[ "${ANDROID_ARM64_HARDWARE:-0}" != 1 ]]; then
+      test "$(uname -m)" = arm64 || { echo 'ARM64 Apple Silicon emulator host required' >&2; exit 2; }
+    fi ;;
   *) echo "Unsupported Android ABI $ABI" >&2; exit 2 ;;
 esac
 OUT="build-android-$ABI"
