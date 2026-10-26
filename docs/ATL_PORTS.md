@@ -66,3 +66,25 @@ with the exact bytes specified by the upstream `WINX_DEFINE_CLSID`;
 this avoids assuming unsupported MinGW `__uuidof` template
 instantiation. The old WTL8 port remains diagnostic until its DLL
 loads and executes with TinyCC x86.
+
+## Verified Windows i686 WTL8 C ABI
+
+The pinned `WTL4MinGW` i686 llvm-mingw C++ DLL now builds and
+passes five real TinyCC x86 dynamic C-ABI client runs, including
+`CAppModule`/message-loop/idle registration and hidden HWND
+creation and cleanup. The compatibility patch supplies only an
+explicit `GUID_ATLVer30` constant (with the exact source UUID)
+in place of an unresolved MinGW `__mingw_uuidof` template symbol;
+no GUID semantics are altered. The legacy x86 step is now
+**required**, though it remains prohibited from redistribution
+before licensing review.
+
+## OpenATL Windows ARM64
+
+A pinned OpenATL C++17 native ARM64 DLL is linked with llvm-mingw;
+a native ARM64 TinyCC C client loads it by versioned exports. Both
+PE machine types and a SHA-256 manifest are verified on the
+real Windows ARM64 runner, with five runtime invocations.
+No C++ type, COM pointer or HWND crosses the C ABI. This is the
+modern port's explicit ARM64 expansion; it does not qualify
+OpenATL's writable/executable `CWndProcThunk`.
