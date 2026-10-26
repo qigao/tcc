@@ -35,7 +35,7 @@ for ($i=1; $i -le 5; ++$i) {
   $rc = $LASTEXITCODE
   $line = ($output | ForEach-Object { "$_".Trim() }) -join ''
   if ($rc -ne 0 -or $line -cne $expected) {
-    throw "Isolated RATL COM P1 reference native x64 failed run $i, exit=$rc: $line"
+    throw "Isolated RATL COM P1 reference native x64 failed run $i, exit=${rc}: $line"
   }
 }
 Write-Host 'Independent RATL COM P1 x64 factory/lifecycle/temporary class-object 5/5 PASS; ARM64 NOT qualified'
