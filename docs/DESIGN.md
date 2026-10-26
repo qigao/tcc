@@ -113,3 +113,17 @@ and thread lifetimes; no cross-CRT buffers, C++ objects or file handles
 are exchanged. The 32-bit pointer CAS/publication test rejects mismatched
 ABI DLLs and verifies unload/reopen only after all borrowers have joined.
 This i686 proof does not yet implement the x64 concurrent lease drain.
+
+## Windows i686 DLL admission and drain
+
+The TinyCC x86 facade uses the real Win32 InterlockedCompareExchange
+full-barrier operation to atomically pair a phase
+`EMPTY/READY/DRAIN/MUTATING` and a bounded outstanding-lease count.
+Each call obtains a lease **before** dereferencing the i686 llvm-mingw
+function pointer and returns it only after that function has returned.
+The closing owner transitions to DRAIN in one CAS, refuses additional
+calls and returns BUSY while existing leases are retained. Once the
+last lease has retired, FreeLibrary may execute. A real worker parks
+with a loaned token to deterministically test close-before-return.
+The token is generation-stamped and may not be copied or returned
+more than once; no process, thread, or DLL field escapes the owner.

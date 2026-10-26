@@ -17,6 +17,17 @@ typedef struct message {
 static message shared_message;
 static poc_atomic_ptr32 mailbox = POC_ATOMIC_PTR32_INIT_NULL;
 static int left = 5, right = 17;
+static HANDLE worker_entered, worker_release;
+static int lease_holder(void *unused) {
+    poc_x86_atomic_lease lease = POC_X86_ATOMIC_LEASE_INIT;
+    (void)unused;
+    if (poc_x86_atomic_backend_borrow(&lease)) return 81;
+    if (!SetEvent(worker_entered)) return 82;
+    if (WaitForSingleObject(worker_release, 30000) != WAIT_OBJECT_0) return 83;
+    if (poc_x86_atomic_backend_return(&lease)) return 84;
+    if (poc_x86_atomic_backend_return(&lease) != -1) return 85;
+    return 86;
+}
 static int producer(void *unused) {
     unsigned i;
     (void)unused;
@@ -67,6 +78,34 @@ int main(void) {
         poc_atomic_ptr32_store(&mailbox, NULL);
     }
     if (poc_thread_join(&t, &result) || result != 73 || errors) return 14;
+    {
+        poc_x86_atomic_lease tokens[POC_X86_ATOMIC_MAX_LEASES] = {{0}};
+        poc_x86_atomic_lease extra = POC_X86_ATOMIC_LEASE_INIT;
+        poc_thread holding = POC_THREAD_INIT;
+        int worker_result;
+        for (i = 0; i < POC_X86_ATOMIC_MAX_LEASES; ++i)
+            if (poc_x86_atomic_backend_borrow(&tokens[i])) return 20;
+        if (poc_x86_atomic_backend_borrow(&extra) != POC_X86_ATOMIC_BUSY)
+            return 21;
+        for (i = 0; i < POC_X86_ATOMIC_MAX_LEASES; ++i)
+            if (poc_x86_atomic_backend_return(&tokens[i])) return 22;
+        if (poc_x86_atomic_backend_return(&tokens[0]) != -1) return 23;
+        worker_entered = CreateEventA(NULL, TRUE, FALSE, NULL);
+        worker_release = CreateEventA(NULL, TRUE, FALSE, NULL);
+        if (!worker_entered || !worker_release) return 24;
+        if (poc_thread_create(&holding, lease_holder, NULL)) return 25;
+        if (WaitForSingleObject(worker_entered, 30000) != WAIT_OBJECT_0) return 26;
+        if (poc_x86_atomic_backend_shutdown() != POC_X86_ATOMIC_BUSY) return 27;
+        if (poc_x86_atomic_backend_borrow(&extra) != POC_X86_ATOMIC_BUSY)
+            return 28;
+        if (poc_x86_atomic_backend_init("poc_x86_atomic.dll") != -1) return 29;
+        if (GetModuleHandleA("poc_x86_atomic.dll") == NULL) return 30;
+        if (!SetEvent(worker_release)) return 31;
+        if (poc_thread_join(&holding, &worker_result) || worker_result != 86)
+            return 32;
+        if (!CloseHandle(worker_entered) || !CloseHandle(worker_release))
+            return 33;
+    }
     if (poc_x86_atomic_backend_shutdown() ||
         GetModuleHandleA("poc_x86_atomic.dll") != NULL) return 15;
     if (poc_x86_atomic_backend_shutdown() != -1) return 16;

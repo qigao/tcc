@@ -107,3 +107,18 @@ bad-ABI rejection, and quiescent DLL unload/reopen.
 This does **not** make TinyCC accept llvm-mingw COFF object files.
 Unlike the separately qualified Windows x64 DLL Owner, the x86
 DLL initialization and unload remain **quiescent-only**.
+
+## Windows i686 DLL bounded admission
+
+The i686 TinyCC-to-llvm-mingw dispatcher now has an independent
+**64-lease Interlocked owner**, mirroring the fail-closed admission
+semantics previously qualified on x64. A real parked worker retains
+its lease while the main thread requests shutdown. The API must return
+`BUSY`, reject new borrow/init attempts, preserve the live DLL, and
+unload only after that worker returns and joins. Tests also cover
+lease-capacity exhaustion, token double return, wrong-ABI rejection,
+repeated unload refusal and quiescent reload.
+
+This is still a limited POC. Copying a live token, using a DLL
+function pointer outside the owner, or attempting uncontrolled
+cross-process unload is not a supported contract.
