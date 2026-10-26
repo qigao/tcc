@@ -32,6 +32,13 @@ try {
   Invoke-Checked $TinyCCExe @("-I$inc", (Join-Path $root 'src/threads/threads.c'),
     (Join-Path $root 'tests/thread_shutdown_overlap.c'), '-o', 'thread_shutdown_overlap_tcc.exe')
   for ($i = 1; $i -le 5; ++$i) { Invoke-Checked (Join-Path $bin 'thread_shutdown_overlap_tcc.exe') @() }
+  # Verify the true Windows x64 ABI (RCX/RDX/R8), never reuse System V GAS.
+  # The .o is produced by llvm-mingw and linked into a real TinyCC C client.
+  Invoke-Checked $clang @('-c', (Join-Path $root 'src/atomic/win_x64.S'), '-o', 'poc_atomic64_win.o')
+  Invoke-Checked $TinyCCExe @("-I$inc", (Join-Path $root 'src/atomic/ptr64.c'),
+    (Join-Path $root 'src/threads/threads.c'),
+    (Join-Path $root 'tests/atomic64_thread.c'), 'poc_atomic64_win.o', '-o', 'atomic64_thread_tcc.exe')
+  for ($i = 1; $i -le 5; ++$i) { Invoke-Checked (Join-Path $bin 'atomic64_thread_tcc.exe') @() }
   Invoke-Checked $TinyCCExe @((Join-Path $root 'tests/win_api.c'), '-o', 'win_api_tcc.exe')
   Invoke-Checked (Join-Path $bin 'win_api_tcc.exe') @()
   Invoke-Checked $TinyCCExe @("-I$inc", (Join-Path $root 'tests/bridge_client.c'), '-o', 'bridge_client_tcc.exe')

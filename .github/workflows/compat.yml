@@ -109,7 +109,7 @@ jobs:
         shell: pwsh
         run: |
           $clang = Join-Path $env:LLVM_MINGW_BIN 'x86_64-w64-mingw32-clang.exe'
-          cmake -S . -B build-win -G Ninja "-DCMAKE_C_COMPILER=$clang" -DPOC_ATOMIC_BACKEND=win32
+          cmake -S . -B build-win -G Ninja "-DCMAKE_C_COMPILER=$clang" "-DCMAKE_ASM_COMPILER=$clang" -DPOC_ATOMIC_BACKEND=win32
           if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
           cmake --build build-win --parallel 2
           if ($LASTEXITCODE -ne 0) { throw 'Windows compile failed' }

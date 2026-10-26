@@ -14,6 +14,7 @@ This repository is an **experimental, standalone C ABI / compiler qualification 
 | TCC C client + llvm-mingw C++/RATL DLL | RATL templates and BSTRs stay inside LLVM-built DLL | required Windows x64 sample |
 | `obfus.h` on Windows TinyCC | semantic parity to unobfuscated source, 2 seeds | required Windows x64 smoke |
 | C11-style thread facade | mutex, condition, join, TLS destructors, bounded queue | compiler matrix qualification |
+| Native 64-bit atomic and pointer CAS | Linux GNU/GAS, AArch64 and Windows x64 TCC with platform-specific ASM | required compiler matrix |
 | Linux native AArch64 atomic32 | LDAR/STLR, LDAXR/STLXR and real 8-thread workload | native ARM64 CI qualification |
 | `obfuscator-llvm` pass | verified IR transformation + seven-input parity under LLVM 14 | required host-LLVM14 workflow; not llvm-mingw |
 
@@ -32,6 +33,12 @@ ctest --test-dir build-gas --output-on-failure
 ```
 
 On Linux ARM64 use `-DPOC_ATOMIC_BACKEND=gas-aarch64` with a native AArch64 GAS assembler. Both the new thread contract and atomic tests run on actual ARM64 runners. For TinyCC on native Linux x86-64 set `CMAKE_C_COMPILER` to your pinned `tcc` and `CMAKE_ASM_COMPILER=gcc`, then require `gas-x86_64`. The GAS backend consists of fixed-size 32-bit System V ABI operations; it does **not** pretend to implement generic `_Atomic(T)` or the entire C11 memory model.
+
+## Native 64-bit atomic and pointer CAS
+
+`include/poc/atomic64.h` introduces a **separate, eight-byte-aligned** 64-bit word and an 8-byte pointer slot. The latter converts pointer representations through `uintptr_t` only on 64-bit flat-address platforms. It does **not** reinterpret `_Atomic(T)`, `std::atomic` or a Salts object. On Linux x86-64/AArch64, the TinyCC implementation links platform-specific external GAS instructions; on Windows x64 the TinyCC client links a separate **Microsoft ABI** object built with llvm-mingw. GCC/Clang baselines use `__atomic`. No platform silently falls back to `volatile` operations. Cross-compiler layout, lifetime and DSO unloading remain outside this narrow API.
+
+The isolated thread test checks CAS failure writeback, 64-bit arithmetic above 4 GiB, real concurrent increments, pointer exchange/CAS, and release/acquire pointer-message publication. An object published by pointer must stay allocated until all readers release it.
 
 ## Thread facade scope
 
