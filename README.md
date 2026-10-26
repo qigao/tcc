@@ -59,3 +59,7 @@ Use **llvm-mingw UCRT x86_64** and **TinyCC for Windows**. Configure/build/test 
 - Source is fetched by explicit commit reference; keep upstream attribution/licenses intact rather than copying these projects into this repository.
 
 See [design and evidence gates](docs/DESIGN.md), and [dependency pins](docs/UPSTREAM.md).
+
+## Windows x64 DLL admission and drain
+
+The cross-toolchain DLL binding now has a **bounded 64-lease admission state machine**, with fail-closed READY → DRAIN → UNLOADING → EMPTY transitions. `poc_atomic64_backend_shutdown()` returns `POC_ATOMIC64_BUSY` for in-flight borrowed or ordinary atomic operations. Every operation holds a lease until the native function returns; the loader does not call `FreeLibrary` until all leases are retired. The Windows TinyCC acceptance test exercises capacity 64/65, a genuine parked worker holding a lease, concurrent drain, refusal of new work, token double-return rejection, final unload and quiescent reopen. This remains a *private POC* ABI, not a production DSO API.

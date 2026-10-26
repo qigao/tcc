@@ -38,6 +38,21 @@ static int publish_worker(void *argument) {
     }
     return 9;
 }
+#if defined(_WIN32) && defined(POC_ATOMIC64_EXTERNAL_DLL)
+static HANDLE borrow_entered;
+static HANDLE borrow_release;
+static int hold_backend_lease(void *unused) {
+    poc_atomic64_lease token = POC_ATOMIC64_LEASE_INIT;
+    (void)unused;
+    if (poc_atomic64_backend_borrow(&token) != 0) return 81;
+    if (!SetEvent(borrow_entered)) return 82;
+    if (WaitForSingleObject(borrow_release, 30000) != WAIT_OBJECT_0) return 83;
+    if (poc_atomic64_backend_return(&token) != 0) return 84;
+    if (poc_atomic64_backend_return(&token) != -1) return 85;
+    return 86;
+}
+#endif
+
 int main(void) {
     int i, result, err = 0;
     poc_thread workers[WORKERS] = {{0}}, publisher = POC_THREAD_INIT;
@@ -88,6 +103,32 @@ int main(void) {
     }
     if (poc_thread_join(&publisher, &result) || result != 9 || err) return 20;
 #if defined(_WIN32) && defined(POC_ATOMIC64_EXTERNAL_DLL)
+    {
+        poc_atomic64_lease tokens[POC_ATOMIC64_MAX_LEASES] = {{0}};
+        poc_atomic64_lease extra = POC_ATOMIC64_LEASE_INIT;
+        poc_thread holding = POC_THREAD_INIT;
+        int hold_result;
+        for (i = 0; i < POC_ATOMIC64_MAX_LEASES; ++i)
+            if (poc_atomic64_backend_borrow(&tokens[i]) != 0) return 32;
+        if (poc_atomic64_backend_borrow(&extra) != POC_ATOMIC64_BUSY) return 33;
+        for (i = 0; i < POC_ATOMIC64_MAX_LEASES; ++i)
+            if (poc_atomic64_backend_return(&tokens[i]) != 0) return 34;
+        if (poc_atomic64_backend_return(&tokens[0]) != -1) return 35;
+        borrow_entered = CreateEventA(NULL, TRUE, FALSE, NULL);
+        borrow_release = CreateEventA(NULL, TRUE, FALSE, NULL);
+        if (!borrow_entered || !borrow_release) return 36;
+        if (poc_thread_create(&holding, hold_backend_lease, NULL)) return 37;
+        if (WaitForSingleObject(borrow_entered, 30000) != WAIT_OBJECT_0) return 38;
+        /* Close must reject fresh calls while a real worker holds a lease,
+         * and must not unload the DLL until that borrower has returned it. */
+        if (poc_atomic64_backend_shutdown() != POC_ATOMIC64_BUSY) return 39;
+        if (poc_atomic64_backend_borrow(&extra) != POC_ATOMIC64_BUSY) return 40;
+        if (poc_atomic64_backend_init("poc_atomic64_win.dll") != -1) return 41;
+        if (GetModuleHandleA("poc_atomic64_win.dll") == NULL) return 42;
+        if (!SetEvent(borrow_release)) return 43;
+        if (poc_thread_join(&holding, &hold_result) || hold_result != 86) return 44;
+        if (!CloseHandle(borrow_entered) || !CloseHandle(borrow_release)) return 45;
+    }
     if (poc_atomic64_backend_shutdown() != 0) return 24;
     if (GetModuleHandleA("poc_atomic64_win.dll") != NULL) return 28;
     if (poc_atomic64_backend_shutdown() != -1) return 25;

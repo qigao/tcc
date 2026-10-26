@@ -35,8 +35,22 @@ void poc_atomic_ptr_store(poc_atomic_ptr *p, void *v);
 void *poc_atomic_ptr_exchange(poc_atomic_ptr *p, void *v);
 int poc_atomic_ptr_compare_exchange(poc_atomic_ptr *p, void **expected, void *desired);
 #if defined(_WIN32) && defined(POC_ATOMIC64_EXTERNAL_DLL)
-/* Quiescent-only test entry points; fail closed on unbound operations. */
+/* Private Windows TinyCC DLL owner API, NOT generic C11 atomic ABI.
+ * Admission bounded to 64 simultaneous leases/calls; acquire returns BUSY
+ * once draining starts. The caller owns each lease token; never copy/move it.
+ * Closing is cancel-first: refuse new work, wait for existing lease returns.
+ * Init and final DLL re-init are serialized through the state machine.
+ * No C++ objects or allocators cross this boundary. */
+#define POC_ATOMIC64_BUSY (-2)
+#define POC_ATOMIC64_MAX_LEASES 64
+typedef struct poc_atomic64_lease {
+    unsigned generation;
+    int active;
+} poc_atomic64_lease;
+#define POC_ATOMIC64_LEASE_INIT { 0u, 0 }
 int poc_atomic64_backend_init(const char *dll_path);
+int poc_atomic64_backend_borrow(poc_atomic64_lease *token);
+int poc_atomic64_backend_return(poc_atomic64_lease *token);
 int poc_atomic64_backend_shutdown(void);
 #endif
 #ifdef __cplusplus
