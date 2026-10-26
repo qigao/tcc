@@ -128,6 +128,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           ./scripts/windows-atl-com-p1b.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
           if ($LASTEXITCODE -ne 0) { throw 'OpenATL P1-B object map x64 runtime failed' }
+      - name: OpenATL P1-C isolated HKCR redirect and sandbox cleanup x64/ARM64 (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-atl-registry-sandbox.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
+          if ($LASTEXITCODE -ne 0) { throw 'ATL P1-C registry sandbox qualification failed' }
       - name: Independent RATL COM P1 reference x64 native (required)
         shell: pwsh
         run: |
@@ -146,6 +152,7 @@ jobs:
             build-wtl10/atl_com_openatl_arm64.exe
             build-wtl10/atl_com_p1_openatl_arm64.exe
             build-wtl10/atl_com_p1b_openatl_arm64.exe
+            build-wtl10/atl_registry_sandbox_arm64.exe
             build-wtl10/manifest.json
           if-no-files-found: error
 
@@ -166,7 +173,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ne 'Arm64') { throw 'Native Windows ARM64 runner required' }
           $manifest = Get-Content wtl10-arm64/manifest.json -Raw | ConvertFrom-Json -AsHashtable
-          foreach ($filename in @('poc_openatl_wtl10_arm64.dll','wtl10_client_arm64.exe','wtl10_gui_runtime_aarch64.exe','atl_com_openatl_arm64.exe','atl_com_p1_openatl_arm64.exe','atl_com_p1b_openatl_arm64.exe')) {
+          foreach ($filename in @('poc_openatl_wtl10_arm64.dll','wtl10_client_arm64.exe','wtl10_gui_runtime_aarch64.exe','atl_com_openatl_arm64.exe','atl_com_p1_openatl_arm64.exe','atl_com_p1b_openatl_arm64.exe','atl_registry_sandbox_arm64.exe')) {
             $path = (Resolve-Path "wtl10-arm64/$filename").Path
             [byte[]]$raw = [IO.File]::ReadAllBytes($path)
             if ($raw.Length -lt 128) { throw "Tiny PE: $filename" }
@@ -217,5 +224,15 @@ jobs:
             }
           }
           Write-Host 'Native ARM64 OpenATL COM P1-B two-TU map and atomic rollback 5/5 PASS'
+          $expectedSandbox = 'ATL_REG_SANDBOX_OK isolated=1 redirect=1 rollback=1 restored=1 clean=1 stub_failclosed=1'
+          for ($i = 1; $i -le 5; $i++) {
+            $out = @(& ./wtl10-arm64/atl_registry_sandbox_arm64.exe 2>&1)
+            $rc = $LASTEXITCODE
+            $actual = ($out | ForEach-Object { "$_".Trim() }) -join ''
+            if ($rc -ne 0 -or $actual -cne $expectedSandbox) {
+              throw "Native Windows ARM64 registry sandbox failed run $i exit=$($rc): $actual"
+            }
+          }
+          Write-Host 'OpenATL native Windows ARM64 isolated HKCR test 5/5 PASS'
           Write-Host 'Native ARM64 WTL10 hidden-window/dialog and RX thunk runtime 5/5 PASS'
           Write-Host 'Native Windows ARM64 WTL10/OpenATL/TinyCC C ABI 5/5 PASS'

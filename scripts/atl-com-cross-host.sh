@@ -63,5 +63,13 @@ for cpu in x86_64 aarch64; do
     -static -lole32 -loleaut32 -luuid -lrpcrt4 -lshlwapi \
     -ladvapi32 -lgdi32 -luser32 -lkernel32
   python3 tests/wtl10/verify_pe_machine.py "$P1B_EXE" "$cpu"
+
+  SANDBOX_EXE="build-wtl10-host/atl_registry_sandbox_$cpu.exe"
+  "$CXX" -std=c++17 -O0 -DNDEBUG -DUNICODE -D_UNICODE \
+    -D_ATL_APARTMENT_THREADED -D_WIN32_WINNT=0x0601 \
+    "-I$OPENATL/include" tests/atl_conformance/registry_sandbox.cpp \
+    -o "$SANDBOX_EXE" -static -lole32 -loleaut32 -luuid \
+    -lrpcrt4 -lshlwapi -ladvapi32 -lgdi32 -luser32 -lkernel32
+  python3 tests/wtl10/verify_pe_machine.py "$SANDBOX_EXE" "$cpu"
 done
 echo "ATL COM P0/P1 separate PE cross-builds PASS (RATL x64 P0 reference; OpenATL P1 x64+ARM64)"
