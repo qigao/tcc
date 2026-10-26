@@ -68,21 +68,21 @@ for old, new, count in changes:
 s = change(s,
     'wsprintfA(p->m_szAutoName, "ATL:%8.8X", (DWORD)&p->m_wc);',
     'int n = ::snprintf(p->m_szAutoName, sizeof(p->m_szAutoName), '
-    '"ATL:%016llX", (unsigned long long)(ULONG_PTR)&p->m_wc);\\n'
-    '\\t\\t\\t\\tif (n < 0 || n >= (int)sizeof(p->m_szAutoName)) '
+    '"ATL:%016llX", (unsigned long long)(ULONG_PTR)&p->m_wc);\n'
+    '\t\t\t\tif (n < 0 || n >= (int)sizeof(p->m_szAutoName)) '
     '{ ::LeaveCriticalSection(&pM->m_csWindowCreate); return 0; }')
 s = change(s,
     'wsprintfW(p->m_szAutoName, L"ATL:%8.8X", (DWORD)&p->m_wc);',
     'int n = ::swprintf(p->m_szAutoName, '
     'sizeof(p->m_szAutoName)/sizeof(p->m_szAutoName[0]), '
-    'L"ATL:%016llX", (unsigned long long)(ULONG_PTR)&p->m_wc);\\n'
-    '\\t\\t\\t\\tif (n < 0 || n >= '
+    'L"ATL:%016llX", (unsigned long long)(ULONG_PTR)&p->m_wc);\n'
+    '\t\t\t\tif (n < 0 || n >= '
     '(int)(sizeof(p->m_szAutoName)/sizeof(p->m_szAutoName[0]))) '
     '{ ::LeaveCriticalSection(&pM->m_csWindowCreate); return 0; }')
 s = change(s,
-    '#ifndef __ATLBASE_H__\\n\\t#error atlwin.h requires atlbase.h to be included first\\n#endif',
-    '#ifndef __ATLBASE_H__\\n\\t#error atlwin.h requires atlbase.h to be included first\\n#endif'
-    '\\n#include <stdio.h>\\n#include <wchar.h>')
+    '#ifndef __ATLBASE_H__\n\t#error atlwin.h requires atlbase.h to be included first\n#endif',
+    '#ifndef __ATLBASE_H__\n\t#error atlwin.h requires atlbase.h to be included first\n#endif'
+    '\n#include <stdio.h>\n#include <wchar.h>')
 # _AtlCreateWndData is used by Winx to transfer ownership into the
 # first native window message. Once consumed, the same union slot may be
 # used by the code thunk. The RX allocation itself is a separate owner.
