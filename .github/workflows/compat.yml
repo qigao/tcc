@@ -148,3 +148,34 @@ jobs:
           New-Item -ItemType Directory -Force tools/obfus | Out-Null
           Invoke-WebRequest 'https://raw.githubusercontent.com/DosX-dev/obfus.h/52c971a8270e3dd27f3c4fba9f464150b63bf021/include/obfus.h' -OutFile tools/obfus/obfus.h
           ./scripts/windows-interop.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -TinyCCExe $tcc.FullName -RATLRoot (Resolve-Path tools/ratl).Path -ObfusHeader (Resolve-Path tools/obfus/obfus.h).Path
+      - name: Windows TinyCC x86 independent ABI and threading diagnostic
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tcc32 = Get-ChildItem tools/tinycc-win -Recurse -Filter i386-win32-tcc.exe | Select-Object -First 1
+          if (-not $tcc32) { throw 'Pinned TinyCC package lacks i386-win32-tcc.exe' }
+          $root = (Resolve-Path .).Path
+          $inc = Join-Path $root 'include'
+          $bin = Join-Path $root 'build-x86'
+          function Invoke-Checked([string]$program, [string[]]$args_) {
+            & $program @args_
+            if ($LASTEXITCODE -ne 0) { throw "$program exited $LASTEXITCODE" }
+          }
+          Invoke-Checked $tcc32.FullName @('tests/win_x86/abi_client.c', '-o', 'build-x86/abi_client_tcc.exe')
+          Invoke-Checked $tcc32.FullName @("-I$inc", 'src/atomic/win_interlocked.c',
+            'tests/atomic_thread.c', '-o', 'build-x86/atomic_thread_tcc_x86.exe')
+          Invoke-Checked $tcc32.FullName @("-I$inc", 'src/threads/threads.c',
+            'src/atomic/win_interlocked.c', 'tests/thread_contract.c',
+            '-o', 'build-x86/thread_contract_tcc_x86.exe')
+          Invoke-Checked $tcc32.FullName @("-I$inc", 'src/threads/threads.c',
+            'tests/thread_shutdown_overlap.c', '-o', 'build-x86/thread_shutdown_overlap_tcc_x86.exe')
+          Push-Location $bin
+          try {
+            foreach ($name in @('abi_client_tcc.exe', 'atomic_thread_tcc_x86.exe',
+                                'thread_contract_tcc_x86.exe', 'thread_shutdown_overlap_tcc_x86.exe')) {
+              for ($i = 0; $i -lt 5; ++$i) {
+                Invoke-Checked (Join-Path $bin $name) @()
+              }
+            }
+          } finally { Pop-Location }
