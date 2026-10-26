@@ -148,162 +148,6 @@ jobs:
           New-Item -ItemType Directory -Force tools/obfus | Out-Null
           Invoke-WebRequest 'https://raw.githubusercontent.com/DosX-dev/obfus.h/52c971a8270e3dd27f3c4fba9f464150b63bf021/include/obfus.h' -OutFile tools/obfus/obfus.h
           ./scripts/windows-interop.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -TinyCCExe $tcc.FullName -RATLRoot (Resolve-Path tools/ratl).Path -ObfusHeader (Resolve-Path tools/obfus/obfus.h).Path
-      - name: Clone pinned OpenATL and WTL4MinGW sources
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          git clone https://github.com/kkhaike/openatl.git tools/openatl
-          if ($LASTEXITCODE -ne 0) { throw 'OpenATL clone failed' }
-          git -C tools/openatl checkout --detach 7b587f3e10f3f8d93a01522033de80007368bad5
-          if ($LASTEXITCODE -ne 0) { throw 'OpenATL checkout failed' }
-          git clone https://github.com/waiting4love/WTL4MinGW.git tools/wtl4mingw
-          if ($LASTEXITCODE -ne 0) { throw 'WTL4MinGW clone failed' }
-          git -C tools/wtl4mingw checkout --detach 47dc3c0ff0e44beb8674b6f59533a31c3e08f2a5
-          if ($LASTEXITCODE -ne 0) { throw 'WTL4MinGW checkout failed' }
-          if ((git -C tools/openatl rev-parse HEAD) -ne '7b587f3e10f3f8d93a01522033de80007368bad5') { throw 'OpenATL HEAD mismatch' }
-          if ((git -C tools/wtl4mingw rev-parse HEAD) -ne '47dc3c0ff0e44beb8674b6f59533a31c3e08f2a5') { throw 'WTL4MinGW HEAD mismatch' }
-          # Explicitly scope legacy Clang compatibility to this detached checkout.
-          git -C tools/wtl4mingw apply "$env:GITHUB_WORKSPACE/patches/wtl4mingw-clang-headers.patch"
-          if ($LASTEXITCODE -ne 0) { throw 'Pinned WTL8 compatibility patch failed' }
-          if (!(Test-Path tools/openatl/LICENSE) -or !(Test-Path tools/wtl4mingw/LICENSE)) { throw 'Missing licenses' }
-      - name: OpenATL C++17 x64 TinyCC C-ABI required runtime
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $tcc64 = Get-ChildItem tools/tinycc-win -Recurse -Filter tcc.exe | Select-Object -First 1
-          $tcc32 = Get-ChildItem tools/tinycc-win -Recurse -Filter i386-win32-tcc.exe | Select-Object -First 1
-          if (-not $tcc64 -or -not $tcc32) { throw 'TinyCC drivers missing' }
-          ./scripts/windows-atl-ports.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -TinyCC64 $tcc64.FullName -TinyCC32 $tcc32.FullName -OpenATLRoot (Resolve-Path tools/openatl).Path -WTL4MinGWRoot (Resolve-Path tools/wtl4mingw).Path -Port openatl
-      - name: WTL4MinGW legacy i686 TinyCC C-ABI required runtime
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $tcc64 = Get-ChildItem tools/tinycc-win -Recurse -Filter tcc.exe | Select-Object -First 1
-          $tcc32 = Get-ChildItem tools/tinycc-win -Recurse -Filter i386-win32-tcc.exe | Select-Object -First 1
-          if (-not $tcc64 -or -not $tcc32) { throw 'TinyCC drivers missing' }
-          ./scripts/windows-atl-ports.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -TinyCC64 $tcc64.FullName -TinyCC32 $tcc32.FullName -OpenATLRoot (Resolve-Path tools/openatl).Path -WTL4MinGWRoot (Resolve-Path tools/wtl4mingw).Path -Port wtl4mingw
-      - name: WTL4MinGW Windows x64 pointer-safe W^X GUI required runtime
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          python scripts/wtl4mingw-win64-port.py tools/wtl4mingw
-          if ($LASTEXITCODE -ne 0) { throw 'Win64 WTL8 source refactor failed' }
-          $cc = Join-Path $env:LLVM_MINGW_BIN 'x86_64-w64-mingw32-clang++.exe'
-          $tcc = Get-ChildItem tools/tinycc-win -Recurse -Filter tcc.exe | Select-Object -First 1
-          if (-not $tcc -or -not (Test-Path $cc)) { throw 'Pinned x64 drivers unavailable' }
-          $args_ = @('-shared','-std=c++11','-O0','-include','algorithm',
-            '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
-            '-fms-extensions','-Itools/wtl4mingw/atlport/include',
-            '-Itools/wtl4mingw/stdext/include','-Itools/wtl4mingw/wtl/include',
-            'tests/atl_ports/wtl4mingw_win64_bridge.cpp',
-            '-o','build-interop/poc_wtl4mingw_x64.dll','-static',
-            '-lole32','-loleaut32','-lcomctl32','-lshlwapi',
-            '-luuid','-lgdi32','-luser32','-ladvapi32')
-          & $cc @args_
-          if ($LASTEXITCODE -ne 0) { throw 'WTL4MinGW x64 DLL compile failed' }
-          & $tcc.FullName 'tests/atl_ports/client.c' '-o' 'build-interop/wtl4mingw_x64_client.exe'
-          if ($LASTEXITCODE -ne 0) { throw 'TinyCC x64 C client compile failed' }
-          Push-Location build-interop
-          try {
-            for ($i = 1; $i -le 5; $i++) {
-              & ./wtl4mingw_x64_client.exe poc_wtl4mingw_x64.dll
-              if ($LASTEXITCODE -ne 0) { throw "WTL4MinGW x64 runtime failed: $LASTEXITCODE" }
-            }
-          } finally { Pop-Location }
-          Write-Host 'WTL4MinGW x64 CWindowImpl callback RX thunk 5/5 PASS'
-      - name: WTL4MinGW x64/ARM64 WTL8 controls/frame/dialog required headers
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          foreach ($triple in @('x86_64','aarch64')) {
-            $cc = Join-Path $env:LLVM_MINGW_BIN "$triple-w64-mingw32-clang++.exe"
-            $args_ = @('-std=c++11','-fsyntax-only','-include','algorithm',
-              '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
-              '-fms-extensions','-Itools/wtl4mingw/atlport/include',
-              '-Itools/wtl4mingw/stdext/include','-Itools/wtl4mingw/wtl/include',
-              'tests/atl_ports/wtl4mingw_full_headers.cpp')
-            & $cc @args_
-            if ($LASTEXITCODE -ne 0) { throw "WTL8 full Win64 header parse failed on $triple" }
-          }
-          Write-Host 'WTL8 frame/control/dialog headers x64 ARM64 parsing PASS'
-      - name: WTL4MinGW x64 controls and ARM64 cross DLL required runtime
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $tiny64 = Get-ChildItem tools/tinycc-win -Recurse -Filter tcc.exe | Select-Object -First 1
-          $tinyArm = Get-ChildItem tools/tinycc-win -Recurse -Filter arm64-win32-tcc.exe | Select-Object -First 1
-          $clang64 = Join-Path $env:LLVM_MINGW_BIN 'x86_64-w64-mingw32-clang++.exe'
-          $clangArm = Join-Path $env:LLVM_MINGW_BIN 'aarch64-w64-mingw32-clang++.exe'
-          if (-not $tiny64 -or -not $tinyArm -or
-              -not (Test-Path $clang64) -or -not (Test-Path $clangArm)) {
-            throw 'Missing pinned clang++ or TinyCC drivers'
-          }
-          $common = @('-shared','-std=c++11','-O0','-include','algorithm',
-            '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
-            '-fms-extensions','-Itools/wtl4mingw/atlport/include',
-            '-Itools/wtl4mingw/stdext/include','-Itools/wtl4mingw/wtl/include',
-            'tests/atl_ports/wtl4mingw_controls_bridge.cpp','-static',
-            '-lole32','-loleaut32','-lcomctl32','-lshlwapi',
-            '-luuid','-lgdi32','-luser32','-ladvapi32')
-          & $clang64 @common '-o' 'build-interop/poc_wtl4mingw_controls_x64.dll'
-          if ($LASTEXITCODE -ne 0) { throw 'WTL8 common-controls x64 C++ DLL build failed' }
-          & $tiny64.FullName 'tests/atl_ports/client.c' '-o' 'build-interop/wtl_controls_client_x64.exe'
-          if ($LASTEXITCODE -ne 0) { throw 'TinyCC x64 control caller build failed' }
-          Push-Location build-interop
-          try {
-            for ($i = 1; $i -le 5; $i++) {
-              & ./wtl_controls_client_x64.exe poc_wtl4mingw_controls_x64.dll
-              if ($LASTEXITCODE -ne 0) { throw "WTL8 x64 controls runtime failed: $LASTEXITCODE" }
-            }
-          } finally { Pop-Location }
-          # Cross-build for native ARM64 runner in the next acceptance phase.
-          & $clangArm @common '-o' 'build-interop/poc_wtl4mingw_controls_arm64.dll'
-          if ($LASTEXITCODE -ne 0) { throw 'WTL8 controls AArch64 DLL build failed' }
-          & $tinyArm.FullName 'tests/atl_ports/client.c' '-o' 'build-interop/wtl_controls_client_arm64.exe'
-          if ($LASTEXITCODE -ne 0) { throw 'TinyCC ARM64 control caller build failed' }
-          foreach ($name in @('poc_wtl4mingw_controls_arm64.dll','wtl_controls_client_arm64.exe')) {
-            [byte[]]$bytes = [IO.File]::ReadAllBytes((Resolve-Path "build-interop/$name").Path)
-            $pe = [BitConverter]::ToInt32($bytes, 0x3c)
-            if ([BitConverter]::ToUInt16($bytes, $pe + 4) -ne 0xAA64) {
-              throw "Expected ARM64 PE: $name"
-            }
-          }
-          Write-Host 'WTL8 controls native x64 5/5 and ARM64 cross-build PASS'
-      - name: WTL4MinGW x64 real modeless dialog DWLP_MSGRESULT diagnostic
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $tiny64 = Get-ChildItem tools/tinycc-win -Recurse -Filter tcc.exe | Select-Object -First 1
-          $tinyArm = Get-ChildItem tools/tinycc-win -Recurse -Filter arm64-win32-tcc.exe | Select-Object -First 1
-          $clang64 = Join-Path $env:LLVM_MINGW_BIN 'x86_64-w64-mingw32-clang++.exe'
-          $clangArm = Join-Path $env:LLVM_MINGW_BIN 'aarch64-w64-mingw32-clang++.exe'
-          if (-not $tiny64 -or -not $tinyArm -or -not (Test-Path $clang64) -or -not (Test-Path $clangArm)) {
-            throw 'Pinned Win64 compiler tools unavailable'
-          }
-          $args_ = @('-shared','-std=c++11','-O0','-include','algorithm',
-            '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
-            '-fms-extensions','-Itools/wtl4mingw/atlport/include',
-            '-Itools/wtl4mingw/stdext/include','-Itools/wtl4mingw/wtl/include',
-            'tests/atl_ports/wtl4mingw_dialog_bridge.cpp','-static',
-            '-lole32','-loleaut32','-lcomctl32','-lshlwapi',
-            '-luuid','-lgdi32','-luser32','-ladvapi32')
-          & $clang64 @args_ '-o' 'build-interop/poc_wtl_dialog_x64.dll'
-          if ($LASTEXITCODE -ne 0) { throw 'WTL8 Win64 dialog C++ DLL build failed' }
-          & $tiny64.FullName 'tests/atl_ports/client.c' '-o' 'build-interop/wtl_dialog_client_x64.exe'
-          if ($LASTEXITCODE -ne 0) { throw 'TinyCC x64 dialog C client build failed' }
-          Push-Location build-interop
-          try {
-            for ($i = 1; $i -le 5; ++$i) {
-              & ./wtl_dialog_client_x64.exe poc_wtl_dialog_x64.dll
-              if ($LASTEXITCODE -ne 0) { throw "WTL Win64 dialog runtime failed: $LASTEXITCODE" }
-            }
-          } finally { Pop-Location }
-          & $clangArm @args_ '-o' 'build-interop/poc_wtl_dialog_arm64.dll'
-          if ($LASTEXITCODE -ne 0) { throw 'WTL8 ARM64 dialog DLL compile failed' }
-          & $tinyArm.FullName 'tests/atl_ports/client.c' '-o' 'build-interop/wtl_dialog_client_arm64.exe'
-          if ($LASTEXITCODE -ne 0) { throw 'TinyCC ARM64 dialog client compile failed' }
-          Write-Host 'WTL8 modeless dialog x64 5/5 and ARM64 cross-compile PASS'
       - name: Windows ARM64 TinyCC and llvm-mingw required PE compile (no runtime)
         shell: pwsh
         run: |
@@ -376,49 +220,6 @@ jobs:
             'src/threads/threads.c', 'tests/atomic64_thread.c',
             '-o', 'build-arm64-win/atomic64_tcc_arm64.exe')
           Assert-Arm64-PE 'build-arm64-win/atomic64_tcc_arm64.exe'
-          # Modern OpenATL (C++17) on native Windows ARM64, pinned source.
-          # Never copy a C++ object, BSTR, HANDLE or exception into TinyCC C.
-          $clangArmCpp = Join-Path $env:LLVM_MINGW_BIN 'aarch64-w64-mingw32-clang++.exe'
-          if (-not (Test-Path $clangArmCpp)) { throw 'AArch64 llvm-mingw C++ driver missing' }
-          Invoke-Checked $clangArmCpp @('-shared','-std=c++17','-O0',
-            '-DUNICODE','-D_UNICODE','-Itools/openatl/include',
-            'tests/atl_ports/openatl_bridge.cpp',
-            '-o','build-arm64-win/poc_openatl_arm64.dll','-static',
-            '-loleaut32','-lole32','-lcomctl32','-lshlwapi','-luuid','-luser32')
-          Assert-Arm64-PE 'build-arm64-win/poc_openatl_arm64.dll'
-          Invoke-Checked $tccArm.FullName @('tests/atl_ports/client.c',
-            '-o','build-arm64-win/openatl_client_arm64.exe')
-          Assert-Arm64-PE 'build-arm64-win/openatl_client_arm64.exe'
-          # WTL4MinGW x64/ARM64 refactor: same detached/pinned WTL8 checkout.
-          # All old ATL callbacks and Winx thunk code remain inside this DLL.
-          Invoke-Checked $clangArmCpp @('-shared','-std=c++11','-O0',
-            '-include','algorithm','-fms-extensions',
-            '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
-            '-Itools/wtl4mingw/atlport/include',
-            '-Itools/wtl4mingw/stdext/include',
-            '-Itools/wtl4mingw/wtl/include',
-            'tests/atl_ports/wtl4mingw_win64_bridge.cpp',
-            '-o','build-arm64-win/poc_wtl4mingw_arm64.dll','-static',
-            '-lole32','-loleaut32','-lcomctl32','-lshlwapi',
-            '-luuid','-lgdi32','-luser32','-ladvapi32')
-          Assert-Arm64-PE 'build-arm64-win/poc_wtl4mingw_arm64.dll'
-          Invoke-Checked $tccArm.FullName @('tests/atl_ports/client.c',
-            '-o','build-arm64-win/wtl4mingw_client_arm64.exe')
-          Assert-Arm64-PE 'build-arm64-win/wtl4mingw_client_arm64.exe'
-          Invoke-Checked $clangArmCpp @('-shared','-std=c++11','-O0',
-            '-include','algorithm','-fms-extensions',
-            '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
-            '-Itools/wtl4mingw/atlport/include',
-            '-Itools/wtl4mingw/stdext/include',
-            '-Itools/wtl4mingw/wtl/include',
-            'tests/atl_ports/wtl4mingw_controls_bridge.cpp',
-            '-o','build-arm64-win/poc_wtl_controls_arm64.dll','-static',
-            '-lole32','-loleaut32','-lcomctl32','-lshlwapi',
-            '-luuid','-lgdi32','-luser32','-ladvapi32')
-          Assert-Arm64-PE 'build-arm64-win/poc_wtl_controls_arm64.dll'
-          Invoke-Checked $tccArm.FullName @('tests/atl_ports/client.c',
-            '-o','build-arm64-win/wtl_controls_client_arm64.exe')
-          Assert-Arm64-PE 'build-arm64-win/wtl_controls_client_arm64.exe'
           $manifest = @{}
           Get-ChildItem build-arm64-win -File | Where-Object {
             $_.Extension -in @('.exe', '.dll')
@@ -509,12 +310,9 @@ jobs:
             'atomic_thread_llvm_arm64.exe',
             'thread_contract_llvm_arm64.exe',
             'atomic_small_tcc_arm64.exe',
-            'atomic64_tcc_arm64.exe',
-            'openatl_client_arm64.exe',
-            'wtl4mingw_client_arm64.exe',
-            'wtl_controls_client_arm64.exe'
+            'atomic64_tcc_arm64.exe'
           )
-          $dlls = @('poc_atomic64_win.dll', 'poc_atomic64_badabi.dll', 'poc_openatl_arm64.dll', 'poc_wtl4mingw_arm64.dll', 'poc_wtl_controls_arm64.dll')
+          $dlls = @('poc_atomic64_win.dll', 'poc_atomic64_badabi.dll')
           foreach ($name in ($names + $dlls)) {
             $path = (Resolve-Path (Join-Path 'arm64-bin' $name)).Path
             [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
@@ -532,15 +330,7 @@ jobs:
             $repeat = if ($name -like '*thread*' -or
                           $name -like 'atomic*_tcc_arm64.exe') { 10 } else { 5 }
             for ($i = 1; $i -le $repeat; ++$i) {
-              if ($name -eq 'openatl_client_arm64.exe') {
-                & $path 'poc_openatl_arm64.dll'
-              } elseif ($name -eq 'wtl4mingw_client_arm64.exe') {
-                & $path 'poc_wtl4mingw_arm64.dll'
-              } elseif ($name -eq 'wtl_controls_client_arm64.exe') {
-                & $path 'poc_wtl_controls_arm64.dll'
-              } else {
-                & $path
-              }
+              & $path
               if ($LASTEXITCODE -ne 0) {
                 throw "Native ARM64 runtime failed: $name repetition $i exit $LASTEXITCODE"
               }

@@ -59,7 +59,7 @@ try {
   $wtlIncludes = $header.Directory.FullName
   $atlIncludes = (Resolve-Path tools/wtl10-openatl/include).Path
   $fixture = (Resolve-Path tests/wtl10/openatl_wtl10_bridge.cpp).Path
-  $client = (Resolve-Path tests/atl_ports/client.c).Path
+  $client = (Resolve-Path tests/wtl10/client.c).Path
   foreach ($arch in @('x86_64','aarch64')) {
     $cxx = Join-Path $LLVMRoot "$arch-w64-mingw32-clang++.exe"
     $tcc = if ($arch -eq 'x86_64') { $TinyCC64 } else { $TinyCCArm }
