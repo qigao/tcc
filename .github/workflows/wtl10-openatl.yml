@@ -116,6 +116,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           ./scripts/windows-atl-com-conformance.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
           if ($LASTEXITCODE -ne 0) { throw 'Required ATL COM P0 conformance failed' }
+      - name: OpenATL COM P1 factory, rollback and temporary class activation (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-atl-com-p1.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
+          if ($LASTEXITCODE -ne 0) { throw 'OpenATL COM P1 native x64 runtime failed' }
       - name: Save WTL10 provenance for native ARM64 runner
         if: always()
         uses: actions/upload-artifact@v4
@@ -126,6 +132,7 @@ jobs:
             build-wtl10/wtl10_client_arm64.exe
             build-wtl10/wtl10_gui_runtime_aarch64.exe
             build-wtl10/atl_com_openatl_arm64.exe
+            build-wtl10/atl_com_p1_openatl_arm64.exe
             build-wtl10/manifest.json
           if-no-files-found: error
 
@@ -146,7 +153,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ne 'Arm64') { throw 'Native Windows ARM64 runner required' }
           $manifest = Get-Content wtl10-arm64/manifest.json -Raw | ConvertFrom-Json -AsHashtable
-          foreach ($filename in @('poc_openatl_wtl10_arm64.dll','wtl10_client_arm64.exe','wtl10_gui_runtime_aarch64.exe','atl_com_openatl_arm64.exe')) {
+          foreach ($filename in @('poc_openatl_wtl10_arm64.dll','wtl10_client_arm64.exe','wtl10_gui_runtime_aarch64.exe','atl_com_openatl_arm64.exe','atl_com_p1_openatl_arm64.exe')) {
             $path = (Resolve-Path "wtl10-arm64/$filename").Path
             [byte[]]$raw = [IO.File]::ReadAllBytes($path)
             if ($raw.Length -lt 128) { throw "Tiny PE: $filename" }
@@ -177,5 +184,15 @@ jobs:
             }
           }
           Write-Host 'Native ARM64 OpenATL COM P0 contract 5/5 PASS; RATL ARM64 PSEH3 remains unqualified'
+          $expectedP1 = 'ATL_COM_P1_OK create=1 rollback=1 factory=1 nonagg=1 locks=1 running=1 revoke=1 registry_failclosed=1'
+          for ($i = 1; $i -le 5; $i++) {
+            $out = @(& ./wtl10-arm64/atl_com_p1_openatl_arm64.exe 2>&1)
+            $code = $LASTEXITCODE
+            $observed = ($out | ForEach-Object { "$_".Trim() }) -join ''
+            if ($code -ne 0 -or $observed -cne $expectedP1) {
+              throw "Native OpenATL COM P1 ARM64 failed run $i : code=$code $observed"
+            }
+          }
+          Write-Host 'Native ARM64 OpenATL COM P1 factory/rollback/class-object activation 5/5 PASS'
           Write-Host 'Native ARM64 WTL10 hidden-window/dialog and RX thunk runtime 5/5 PASS'
           Write-Host 'Native Windows ARM64 WTL10/OpenATL/TinyCC C ABI 5/5 PASS'
