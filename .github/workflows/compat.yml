@@ -148,9 +148,8 @@ jobs:
           New-Item -ItemType Directory -Force tools/obfus | Out-Null
           Invoke-WebRequest 'https://raw.githubusercontent.com/DosX-dev/obfus.h/52c971a8270e3dd27f3c4fba9f464150b63bf021/include/obfus.h' -OutFile tools/obfus/obfus.h
           ./scripts/windows-interop.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -TinyCCExe $tcc.FullName -RATLRoot (Resolve-Path tools/ratl).Path -ObfusHeader (Resolve-Path tools/obfus/obfus.h).Path
-      - name: Windows TinyCC x86 independent ABI and threading diagnostic
+      - name: Windows TinyCC x86 required ABI, Atomic32 and Threads runtime
         shell: pwsh
-        continue-on-error: true
         run: |
           $ErrorActionPreference = 'Stop'
           $tcc32 = Get-ChildItem tools/tinycc-win -Recurse -Filter i386-win32-tcc.exe | Select-Object -First 1
@@ -174,7 +173,8 @@ jobs:
           try {
             foreach ($name in @('abi_client_tcc.exe', 'atomic_thread_tcc_x86.exe',
                                 'thread_contract_tcc_x86.exe', 'thread_shutdown_overlap_tcc_x86.exe')) {
-              for ($i = 0; $i -lt 5; ++$i) {
+              $repetitions = if ($name -like 'thread_*') { 20 } else { 5 }
+              for ($i = 0; $i -lt $repetitions; ++$i) {
                 Invoke-Checked (Join-Path $bin $name) @()
               }
             }
