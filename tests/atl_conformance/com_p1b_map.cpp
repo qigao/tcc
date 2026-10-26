@@ -9,6 +9,7 @@
 #include <ocidl.h>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <atlbase.h>
 #include <atlcom.h>
 
@@ -92,7 +93,58 @@ static DWORD WINAPI wrong_thread_revoke(void* arg) {
     return 0;
 }
 
-int main() {
+// Negative cases run in a FRESH process. A failed automatic-map admission
+// sets a sticky fatal error; it must never poison subsequent normal CI runs.
+static int negative_map_test(const char* mode) {
+    if (ATL::AtlAutoObjectCount()!=2 || ATL::AtlAutoObjectError()!=S_OK)
+        return fail(60,"negative_case_precondition");
+    HRESULT expected=E_INVALIDARG;
+    if(std::strcmp(mode,"invalid")==0) {
+        static ATL::_ATL_OBJMAP_ENTRY malformed={};
+        if(ATL::AtlRegisterAutoObjectEntry(&malformed))
+            return fail(61,"malformed_admitted");
+    } else if(std::strcmp(mode,"duplicate")==0) {
+        expected=HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS);
+        static ATL::_ATL_OBJMAP_ENTRY repeated=__objMap_AutoClassA;
+        if(ATL::AtlRegisterAutoObjectEntry(&repeated))
+            return fail(62,"duplicate_class_admitted");
+    } else if(std::strcmp(mode,"capacity")==0) {
+        expected=HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+        // Static storage is essential: module teardown must not outlive any
+        // entries added to the bounded process-level map.
+        static CLSID ids[15]={};
+        static ATL::_ATL_OBJMAP_ENTRY entries[15]={};
+        for(unsigned i=0;i<15;i++) {
+            ids[i]=P1B_CLASS_A;
+            ids[i].Data1+=i+1;
+            entries[i]=__objMap_AutoClassA;
+            entries[i].pclsid=&ids[i];
+            entries[i].dwRegister=0;
+            bool accepted=ATL::AtlRegisterAutoObjectEntry(&entries[i]);
+            if(i<14 && !accepted) return fail(63,"premature_capacity");
+            if(i==14 && accepted) return fail(64,"overflow_admitted");
+        }
+        if(ATL::AtlAutoObjectCount()!=16)
+            return fail(65,"capacity_count");
+    } else {
+        return fail(66,"unknown_negative_mode");
+    }
+    if(ATL::AtlAutoObjectError()!=expected)
+        return fail(67,"sticky_error_missing");
+    void* output=reinterpret_cast<void*>(static_cast<uintptr_t>(1));
+    if(ATL::_AtlComModule.GetClassObject(
+       P1B_CLASS_A,IID_IClassFactory,&output)!=expected || output!=nullptr)
+        return fail(68,"poisoned_map_class_lookup");
+    if(ATL::_AtlComModule.RegisterClassObjects(
+       CLSCTX_LOCAL_SERVER,REGCLS_MULTIPLEUSE)!=expected)
+        return fail(69,"poisoned_map_class_admission");
+    std::printf("ATL_COM_P1B_NEG_OK mode=%s\n",mode);
+    return 0;
+}
+
+int main(int argc,char** argv) {
+    if(argc==2) return negative_map_test(argv[1]);
+    if(argc!=1) return fail(70,"unexpected_arguments");
     HRESULT init=::CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     if(FAILED(init)) return fail(1,"CoInitializeEx");
 
