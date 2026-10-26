@@ -210,6 +210,9 @@ jobs:
           Invoke-Checked $tcc32.FullName @("-I$inc",
             'src/atomic/win_x86_dll_client.c', 'src/threads/threads.c',
             'tests/win_x86/atomic_ptr32_test.c', '-o', 'build-x86/atomic_ptr32_tcc_x86.exe')
+          Invoke-Checked $tcc32.FullName @("-I$inc",
+            'src/atomic/win_x86_dll_client.c', 'src/threads/threads.c',
+            'tests/win_x86/atomic64_test.c', '-o', 'build-x86/atomic64_tcc_x86.exe')
           Invoke-Checked $tcc32.FullName @('tests/win_x86/abi_client.c', '-o', 'build-x86/abi_client_tcc.exe')
           Invoke-Checked $tcc32.FullName @("-I$inc", 'src/atomic/win_interlocked.c',
             'tests/atomic_thread.c', '-o', 'build-x86/atomic_thread_tcc_x86.exe')
@@ -222,6 +225,7 @@ jobs:
           try {
             foreach ($name in @('abi_client_tcc.exe', 'atomic_thread_tcc_x86.exe',
                                 'atomic_small_tcc_x86.exe', 'atomic_ptr32_tcc_x86.exe',
+                                'atomic64_tcc_x86.exe',
                                 'thread_contract_tcc_x86.exe', 'thread_shutdown_overlap_tcc_x86.exe')) {
               $repetitions = if ($name -like 'thread_*') { 20 } else { 10 }
               for ($i = 0; $i -lt $repetitions; ++$i) {

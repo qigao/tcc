@@ -127,3 +127,17 @@ last lease has retired, FreeLibrary may execute. A real worker parks
 with a loaned token to deterministically test close-before-return.
 The token is generation-stamped and may not be copied or returned
 more than once; no process, thread, or DLL field escapes the owner.
+
+## Windows x86 Atomic64 word-pair ABI
+
+The i686 DLL ABI version 2 extends the existing exact-width
+8/16/32-bit dispatcher with a separate `poc_x86_atomic64_dispatch`.
+The C ABI accepts slot, operation, pointers to low/high 32-bit prior
+values and low/high desired values. Only the llvm-mingw side executes
+native 64-bit `__atomic` instructions. The caller must hold
+8-byte-aligned independent storage; unaligned slots are rejected
+without touching adjacent memory. The TinyCC side never passes or
+returns a 64-bit integer *across the DLL boundary*, avoiding an
+untested compiler-specific lowering. Operations still hold a lease
+for the entire native call. This is a **private** ABI, not a
+replacement for C11 `stdatomic.h`.

@@ -122,3 +122,16 @@ repeated unload refusal and quiescent reload.
 This is still a limited POC. Copying a live token, using a DLL
 function pointer outside the owner, or attempting uncontrolled
 cross-process unload is not a supported contract.
+
+## Real Windows x86 TinyCC 64-bit Atomic
+
+The i686 version-2 DLL exposes a **split-word ABI** for 64-bit atomics:
+the client and DLL exchange two `uint32_t` words rather than depending
+on cross-compiler 64-bit parameter/return-value lowering. All load,
+store, exchange, fetch-add and CAS instructions execute in llvm-mingw's
+native x86 provider. The test requires eight-byte-aligned dedicated
+storage, preserves values above 4 GiB, checks failed-CAS expected
+writeback, carries across the 32-bit boundary, runs 4 concurrent
+increment workers and tests release/acquire message publication.
+The DLL uses the same i686 64-lease owner; no direct object-file
+interoperability or generic C11 `_Atomic` compatibility is claimed.

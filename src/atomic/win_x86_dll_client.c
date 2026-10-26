@@ -9,6 +9,8 @@
 typedef unsigned (__cdecl *version_fn)(void);
 typedef int (__cdecl *dispatch_fn)(
     void *, unsigned, unsigned, unsigned *, unsigned);
+typedef int (__cdecl *dispatch64_fn)(
+    void *, unsigned, unsigned *, unsigned *, unsigned, unsigned);
 /* Single 32-bit Interlocked CAS state: phase in low two bits, number of
  * outstanding leases in higher bits (multiples of four).
  * The full-barrier CAS is the linearization point for every call admission. */
@@ -18,6 +20,7 @@ static volatile LONG g_state = X86_EMPTY;
 static unsigned g_generation;
 static HMODULE g_module;
 static dispatch_fn g_dispatch;
+static dispatch64_fn g_dispatch64;
 static LONG state_read(void) {
     return InterlockedCompareExchange(&g_state, 0, 0);
 }
@@ -49,6 +52,7 @@ int poc_x86_atomic_backend_init(const char *path) {
     HMODULE candidate;
     version_fn version, layout;
     dispatch_fn dispatcher;
+    dispatch64_fn dispatch64;
     if (!path ||
         InterlockedCompareExchange(&g_state, X86_MUTATING, X86_EMPTY) != X86_EMPTY)
         return -1;
@@ -63,16 +67,21 @@ int poc_x86_atomic_backend_init(const char *path) {
                  "poc_x86_atomic_layout", "_poc_x86_atomic_layout");
     dispatcher = (dispatch_fn)lookup(candidate,
                  "poc_x86_atomic_dispatch", "_poc_x86_atomic_dispatch");
-    if (!version || version() != 1u || !layout ||
+    dispatch64 = (dispatch64_fn)lookup(candidate,
+                 "poc_x86_atomic64_dispatch", "_poc_x86_atomic64_dispatch");
+    if (!version || version() != 2u || !layout ||
         layout() != (unsigned)(sizeof(poc_atomic8) |
                               (sizeof(poc_atomic16) << 8) |
-                              (sizeof(poc_atomic_ptr32) << 16)) ||
-        sizeof(void *) != 4u || !dispatcher) {
+                              (sizeof(poc_atomic_ptr32) << 16) |
+                              (sizeof(poc_atomic64_x86) << 24)) ||
+        sizeof(void *) != 4u || !dispatcher || !dispatch64 ||
+        sizeof(poc_atomic64_x86) != 8u) {
         (void)FreeLibrary(candidate);
         InterlockedExchange(&g_state, X86_EMPTY);
         return -1;
     }
     g_dispatch = dispatcher;
+    g_dispatch64 = dispatch64;
     g_module = candidate;
     ++g_generation;
     if (!g_generation) ++g_generation;
@@ -116,6 +125,7 @@ int poc_x86_atomic_backend_shutdown(void) {
         }
         g_module = NULL;
         g_dispatch = NULL;
+        g_dispatch64 = NULL;
         InterlockedExchange(&g_state, X86_EMPTY);
         return 0;
     }
@@ -215,4 +225,53 @@ int poc_atomic_ptr32_compare_exchange(
                   (unsigned)(uintptr_t)desired);
     *expected = (void *)(uintptr_t)previous;
     return result;
+}
+
+/* All 64-bit payload words are split into 32-bit values before crossing the
+ * compiler boundary; the same bounded lease gates both dispatch functions. */
+static int call64(void *slot, unsigned op, unsigned *low, unsigned *high,
+                  unsigned desired_low, unsigned desired_high) {
+    int result;
+    if (!slot || !low || !high) ExitProcess(126);
+    if (enter_dll()) ExitProcess(125);
+    result = g_dispatch64(slot, op, low, high, desired_low, desired_high);
+    leave_dll();
+    if (result < 0) ExitProcess(126);
+    return result;
+}
+static uint64_t combine64(unsigned low, unsigned high) {
+    return ((uint64_t)high << 32) | low;
+}
+static unsigned lo64(uint64_t v) { return (unsigned)v; }
+static unsigned hi64(uint64_t v) { return (unsigned)(v >> 32); }
+uint64_t poc_atomic64_x86_load(const poc_atomic64_x86 *p) {
+    unsigned low = 0u, high = 0u;
+    (void)call64((void *)&p->bits, 1u, &low, &high, 0u, 0u);
+    return combine64(low, high);
+}
+void poc_atomic64_x86_store(poc_atomic64_x86 *p, uint64_t v) {
+    unsigned low = 0u, high = 0u;
+    (void)call64((void *)&p->bits, 2u, &low, &high, lo64(v), hi64(v));
+}
+uint64_t poc_atomic64_x86_exchange(poc_atomic64_x86 *p, uint64_t v) {
+    unsigned low = 0u, high = 0u;
+    (void)call64((void *)&p->bits, 3u, &low, &high, lo64(v), hi64(v));
+    return combine64(low, high);
+}
+uint64_t poc_atomic64_x86_fetch_add(poc_atomic64_x86 *p, uint64_t v) {
+    unsigned low = 0u, high = 0u;
+    (void)call64((void *)&p->bits, 4u, &low, &high, lo64(v), hi64(v));
+    return combine64(low, high);
+}
+int poc_atomic64_x86_compare_exchange(
+    poc_atomic64_x86 *p, uint64_t *expected, uint64_t desired) {
+    unsigned low, high;
+    int ok;
+    if (!expected) ExitProcess(126);
+    low = lo64(*expected);
+    high = hi64(*expected);
+    ok = call64((void *)&p->bits, 5u, &low, &high,
+                lo64(desired), hi64(desired));
+    *expected = combine64(low, high);
+    return ok;
 }
