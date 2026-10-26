@@ -29,3 +29,8 @@ E_NOTIMPL), registry hive rollback, DllRegisterServer, complete COM
 server/object maps, `IDispatch`, aggregation implementation, STA/MTA,
 marshalling, ActiveX/GUI production. P1 only covers explicit gates.
 PR #1 stays Draft/DO NOT MERGE; no Salts production switch.
+
+
+### Independent RATL P1 x64 reference
+
+A separate, authored neutral-contract fixture `tests/atl_conformance/ratl_p1_reference.cpp` exercises comparable `CComObject`, `FinalConstruct` failure rollback, `IClassFactory`, `LockServer`, temporary `CoRegisterClassObject`/`CoRevokeClassObject` and nonaggregation behavior. It is compiled **only** with the pinned RATL header tree and run as a separate x64 process, never linked to OpenATL. RATL's uninitialized class-factory callback and persistent registry APIs are explicitly **not** invoked. RATL Windows ARM64 remains unqualified (PSEH3 x86-only); separate x64 reference results do not establish full Microsoft ATL semantic parity.
