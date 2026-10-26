@@ -35,3 +35,20 @@ nested-tree state: `stale=1` for unchanged RATL and `stale=0` for the
 separate test-only fix. The test first observes real keys and asserts the
 result before printing these lines. Both baselines require a clean Git
 checkout of the source pin; accidental mutation is a hard error.
+
+### Deterministic deletion-denied conformance
+
+A **third, separately named** Windows x64 PE is built using the exact-pinned
+test-only patched RATL checkout and a compile-time test fault flag
+(`RATL_P1D_TEST_DENY_DELETE=1`). The only affected key name is the
+literal `RATL_P1D_DENIED` under an authenticated disposable HKCU/HKCR
+test scope; the test does not modify real registry ACLs.
+
+The test-only patch now also checks and propagates `RegDeleteTreeX` errors
+from `ForceRemove` and `Delete` call sites. Both injected modes
+must return `HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED) = 0x80070005`,
+preserve the old nested branch, and refuse the new value. Any `S_OK`,
+overwritten record, missing old branch, or cleanup failure rejects CI.
+All native x64 tests run five times; Linux/macOS cross-compile a separate
+injected PE. This is NOT production qualification for arbitrary ACL
+failures or concurrent registry mutation.

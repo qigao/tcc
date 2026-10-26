@@ -79,6 +79,16 @@ for cpu in x86_64 aarch64; do
       -static -lole32 -loleaut32 -luuid -lrpcrt4 -lshlwapi \
       -ladvapi32 -lgdi32 -luser32 -lkernel32
     python3 tests/wtl10/verify_pe_machine.py "$RATL_NESTED_FIXED" x86_64
+    RATL_DENIED="build-wtl10-host/ratl_nested_injected_x64.exe"
+    "$CXX" -std=c++17 -O0 -DNDEBUG -DUNICODE -D_UNICODE \
+      -D_ATL_APARTMENT_THREADED -D_WIN32_WINNT=0x0601 \
+      -DRATL_P1D_TEST_DENY_DELETE=1 \
+      -D__RATL__ -DINITGUID -D_USE_PSEH3 -D_CRT_NON_CONFORMING_SWPRINTFS \
+      "-I$RATL_PATCHED/include/atl" "-I$RATL_PATCHED/compat" \
+      tests/atl_conformance/ratl_rgs_nested.cpp -o "$RATL_DENIED" \
+      -static -lole32 -loleaut32 -luuid -lrpcrt4 -lshlwapi \
+      -ladvapi32 -lgdi32 -luser32 -lkernel32
+    python3 tests/wtl10/verify_pe_machine.py "$RATL_DENIED" x86_64
   fi
   # P1 is OpenATL-only; RATL remains an isolated x64 P0 reference.
   P1_EXE="build-wtl10-host/atl_com_p1_openatl_$cpu.exe"

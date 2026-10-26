@@ -50,6 +50,21 @@ $fixCompat=(Resolve-Path (Join-Path $PatchedRoot 'compat')).Path
 $fixed="$OutDir/ratl_nested_patched_x64.exe"
 Compile-RATL $fixInc $fixCompat $fixed
 
+# Third PE enables a compile-time fault only in the isolated RATL
+# test checkout. Never simulate a permission failure using real ACL/HKLM.
+$denied="$OutDir/ratl_nested_injected_x64.exe"
+& $cpp @('-std=c++17','-O0','-DNDEBUG','-DUNICODE','-D_UNICODE',
+  '-D_ATL_APARTMENT_THREADED','-D_WIN32_WINNT=0x0601',
+  '-DRATL_P1D_TEST_DENY_DELETE=1',
+  '-D__RATL__','-DINITGUID','-D_USE_PSEH3',
+  '-D_CRT_NON_CONFORMING_SWPRINTFS',"-I$fixInc","-I$fixCompat",
+  $source,'-o',$denied,'-static','-lole32','-loleaut32',
+  '-luuid','-lrpcrt4','-lshlwapi','-ladvapi32','-lgdi32',
+  '-luser32','-lkernel32')
+if ($LASTEXITCODE -ne 0) { throw 'RATL P1-D injected error executable compile failed' }
+python tests/wtl10/verify_pe_machine.py $denied x86_64
+if ($LASTEXITCODE -ne 0) { throw 'Injected RATL x64 machine mismatch' }
+
 function Execute-Strict([string]$program,[string]$mode,[string]$expected) {
   $process=New-Object System.Diagnostics.Process
   $psi=New-Object System.Diagnostics.ProcessStartInfo
@@ -84,5 +99,8 @@ for($i=1;$i -le 5;++$i) {
     $extra = if ($mode -like '*force' -or $mode -like '*delete') { ' hr=0x00000000 stale=0' } else { '' }
     Execute-Strict $fixed $mode "RATL_P1D_OK mode=$mode$extra"
   }
+  foreach($mode in @('denied-force','denied-delete')) {
+    Execute-Strict $denied $mode "RATL_P1D_OK mode=$mode hr=0x80070005 stale=1"
+  }
 }
-Write-Host 'RATL P1-D original nested-delete BUG reproduced and exact-pinned test-only fix qualified 5/5'
+Write-Host 'RATL P1-D original false-success reproduced; patched nested deletion and access-denied rollback 5/5 PASS'
