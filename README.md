@@ -15,7 +15,7 @@ This repository is an **experimental, standalone C ABI / compiler qualification 
 | `obfus.h` on Windows TinyCC | semantic parity to unobfuscated source, 2 seeds | required Windows x64 smoke |
 | C11-style thread facade | mutex, condition, join, TLS destructors, bounded queue | compiler matrix qualification |
 | Linux native AArch64 atomic32 | LDAR/STLR, LDAXR/STLXR and real 8-thread workload | native ARM64 CI qualification |
-| `obfuscator-llvm` pass | same program output with matching LLVM host plugin | opt-in; NOT bundled |
+| `obfuscator-llvm` pass | verified IR transformation + seven-input parity under LLVM 14 | required host-LLVM14 workflow; not llvm-mingw |
 
 `RATL` means *ReactOS Active Template Library*, a **Windows C++ ATL** implementation, **not** an atomic primitives library. TinyCC compiles C only: all RATL C++ objects stay behind an exported, version-checked C ABI. Windows and Linux platform backends are distinct and never silently fall back to plain volatile storage.
 

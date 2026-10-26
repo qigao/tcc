@@ -11,9 +11,7 @@ permissions:
 jobs:
   llvm14-host-pass:
     runs-on: ubuntu-22.04
-    # Initially diagnostic; compiler/LLVM plugin compatibility has not yet
-    # been qualified against this exact version and source commit.
-    continue-on-error: true
+    # Required exact-head LLVM 14 native host gate; not llvm-mingw compatibility.
     steps:
       - uses: actions/checkout@v4
       - name: Install LLVM 14 host toolchain

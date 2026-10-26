@@ -23,7 +23,7 @@ This POC ABI is **not** binary compatible with `_Atomic`, `std::atomic` or Salts
 | bounded FIFO / close / TLS destructors | required | required | required x64 | required x64 |
 | native AArch64 GAS | required native ARM64 | required native ARM64 | N/A | N/A |
 | obfus.h semantic parity | N/A | N/A | N/A | required x64 smoke |
-| LLVM plugin semantic parity | opt-in | N/A | opt-in matching plugin | N/A |
+| LLVM14 host pass and IR change | required Linux x64 job | N/A | NOT the current llvm-mingw target | N/A |
 
 A **passed compilation** does not establish ABI/layout, memory-order semantics, exception confinement, weak-memory portability, installed SDK correctness, or sanitizer coverage. In particular, native ASM is not automatically observable by TSan; run GCC/Clang source TSan/ASan/UBSan for separately implemented atomics and acquire/release handoffs. For Windows check both compile + **actual execution**; cross-compilation alone is insufficient. On AArch64 use only the separate ELF ABI backend and native ARM64 execution; on Windows ARM64 use Windows intrinsics and native hardware. x86 TSO results cannot substitute for AArch64 memory-model results. The new 32-bit assembly backend does not imply 8/16/64-bit atomics or arbitrary C11 `_Atomic` support.
 
@@ -34,6 +34,10 @@ The `poc_thread`, `poc_mutex`, `poc_condition` and `poc_tss` types are **private
 ## RATL and Windows C ABI
 
 A C++ DLL compiled by llvm-mingw may instantiate RATL templates internally and export `extern "C" __cdecl int poc_ratl_sum(...)`. The TinyCC consumer resolves that export with `LoadLibraryA` + `GetProcAddress`. Each module creates and destroys its own objects; the C boundary passes fixed-size arrays. On x86 the calling convention and exported name decoration must be checked independently; initial scope is x86-64. RATL is LGPL-2.1-or-later and remains an external pinned checkout; do not vendor without attribution and license review.
+
+## LLVM host-pass qualification
+
+The pinned eshard LLVM plugin is built against the same LLVM 14 headers/libraries as `opt-14`, using `patches/llvm14-demote-phi.patch` to reconcile upstream PHI demotion and FCmpInst call signatures with LLVM 14. The required test uses an explicit new-pass-manager `function(flattening)` pipeline; it verifies that IR is actually changed, verifies transformed IR and compares seven runtime inputs. This is host Linux LLVM14 only; latest LLVM/Clang versions shipped with llvm-mingw require a separately built matching plugin and additional native PE tests.
 
 ## Obfuscation acceptance
 
