@@ -196,6 +196,13 @@ static int class_object() {
     const HRESULT revoked=::CoRevokeClassObject(cookie);
     factory->Release();
     if(revoked!=S_OK) return bad(34,"temporary_activation_revoke");
+    IClassFactory* stale=nullptr;
+    const HRESULT after=::CoGetClassObject(TEST_CLASS,CLSCTX_LOCAL_SERVER,
+        nullptr,IID_IClassFactory,reinterpret_cast<void**>(&stale));
+    if(SUCCEEDED(after) || stale!=nullptr) {
+        if(stale) stale->Release();
+        return bad(35,"revoked_class_still_visible");
+    }
     return 0;
 }
 

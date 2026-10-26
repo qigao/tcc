@@ -183,6 +183,14 @@ static int activation() {
     resolved->Release();
     if(::CoRevokeClassObject(cookie)!=S_OK)
         return die(53,"class_registration_revoke");
+    // The published class object must be unreachable after revoke.
+    IClassFactory* stale=nullptr;
+    const HRESULT after=::CoGetClassObject(POC_CLSID,CLSCTX_LOCAL_SERVER,
+        nullptr,IID_IClassFactory,reinterpret_cast<void**>(&stale));
+    if(SUCCEEDED(after) || stale!=nullptr) {
+        if(stale) stale->Release();
+        return die(54,"revoked_class_still_visible");
+    }
     return 0;
 }
 
