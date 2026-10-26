@@ -166,8 +166,7 @@ jobs:
           git -C tools/wtl4mingw apply "$env:GITHUB_WORKSPACE/patches/wtl4mingw-clang-headers.patch"
           if ($LASTEXITCODE -ne 0) { throw 'Pinned WTL8 compatibility patch failed' }
           if (!(Test-Path tools/openatl/LICENSE) -or !(Test-Path tools/wtl4mingw/LICENSE)) { throw 'Missing licenses' }
-      - name: OpenATL C++17 x64 TinyCC C-ABI diagnostic
-        continue-on-error: true
+      - name: OpenATL C++17 x64 TinyCC C-ABI required runtime
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'

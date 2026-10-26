@@ -50,3 +50,19 @@ commits; none of these third-party headers or binaries are vendored.
   POC. If a legacy WTL header fails under llvm-mingw Clang, preserve
   the compiler diagnostic and the exact source line; do not patch
   upstream behavior or pass with \`-w -fpermissive\` as a workaround.
+
+## Exact-head CI milestones
+
+The first OpenATL x64 test successfully built a native C++17 DLL with
+`-DUNICODE -D_UNICODE` and executed its TinyCC x64 C ABI caller
+five times, so this path is promoted to a **required** CI step.
+
+The WTL4MinGW i686 header build progressed after injecting the C++
+`<algorithm>` header, qualifying the ambiguous GUID helper and
+excluding the optional outdated `atlctrls.h` API. Its subsequent
+link exposed an unresolved `__mingw_uuidof<_CoClassATLVer30>()`
+symbol. The pinned-source patch substitutes a local explicit GUID
+with the exact bytes specified by the upstream `WINX_DEFINE_CLSID`;
+this avoids assuming unsupported MinGW `__uuidof` template
+instantiation. The old WTL8 port remains diagnostic until its DLL
+loads and executes with TinyCC x86.
