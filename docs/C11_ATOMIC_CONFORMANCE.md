@@ -12,9 +12,15 @@ not the experimental `poc_atomic*` storage ABI. Tracked by
 - `tests/c11/atomic_concurrent.c`: four-worker relaxed RMW and an
   independent release/acquire publication protocol transferring
   non-atomic payload only after the acquiring load.
-- CMake/CTest runs on native GCC, Clang, Linux x86-64/ARM64 TinyCC and
-  Windows llvm-mingw. Explicit native TinyCC C11 clients are run on
-  Windows x64 and macOS Intel/Apple Silicon. Linux tests are repeated.
+- CMake/CTest runs on native GCC, Clang and Linux x86-64/ARM64
+  TinyCC. Windows llvm-mingw Clang and macOS Clang run the positive tests.
+- Pinned TinyCC on **Windows x64 and macOS x86-64/ARM64** defines
+  `__STDC_NO_ATOMICS__` (confirmed by failing native tests on first CI run).
+  The explicit `expect_no_atomics` compile/run gate requires that the
+  unsupported capability is reported; it is **NOT** a passing C11
+  conformance test. The existing independent `poc_atomic*` native POC
+  acceptance remains required. If this capability changes, fail the
+  negative gate and replace it with real positive compiler tests.
 - There must be **no** `-Iinclude` replacement of the toolchain's
   `stdatomic.h`; only `poc/threads.h` is used for worker admission.
   Never reinterpret an `_Atomic(T)` as `poc_atomic*` or a C++ atomic.
