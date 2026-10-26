@@ -41,8 +41,11 @@ jobs:
           # the Linux HOST rather than be built as an Android target ELF.
           /usr/bin/cc -DC2STR conftest.c -o c2str.exe
           test -x ./c2str.exe
-          make -j2 tcc
+          # Android Bionic implements pthread in libc. There is no
+          # separate -lpthread linker library in the NDK sysroot.
+          make -j2 tcc LIBS="-lm -ldl"
           cp tcc "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/tcc"
+          cp libtcc.so "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/libtcc.so"
           "$CC" -O2 -std=c11 -pthread \
             "$GITHUB_WORKSPACE/tests/platform/android_smoke.c" \
             -ldl -o "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/android_smoke"
