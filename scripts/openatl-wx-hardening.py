@@ -77,6 +77,90 @@ REPLACEMENTS = [
         }
         DLGPROC pProc = (DLGPROC)pThis->m_thunk.GetWndProc();"""
 ),
+(
+"""        if (bRet) {
+            switch (uMsg) {
+            case WM_COMPAREITEM:
+            case WM_VKEYTOITEM:
+            case WM_CHARTOITEM:
+            case WM_INITDIALOG:
+            case WM_QUERYDRAGICON:
+            case WM_CTLCOLORMSGBOX:
+            case WM_CTLCOLOREDIT:
+            case WM_CTLCOLORLISTBOX:
+            case WM_CTLCOLORBTN:
+            case WM_CTLCOLORDLG:
+            case WM_CTLCOLORSCROLLBAR:
+            case WM_CTLCOLORSTATIC:
+                // Return the result directly for these messages
+                return (INT_PTR)lRes;
+            default:
+                break;
+            }
+            if (lRes != 0) {
+                ::SetWindowLongPtr(pThis->m_hWnd, DWLP_MSGRESULT, lRes);
+            }
+            return TRUE;
+        }
+
+        if (uMsg == WM_NCDESTROY) {
+            pThis->m_dwState |= CWindowImplRoot<TBase>::WINSTATE_DESTROYED;
+        }
+
+        if ((pThis->m_dwState & CWindowImplRoot<TBase>::WINSTATE_DESTROYED) && (pThis->m_pCurrentMsg == NULL)) {
+            HWND hWndThis = pThis->m_hWnd;
+            pThis->m_hWnd = NULL;
+            pThis->m_dwState &= ~CWindowImplRoot<TBase>::WINSTATE_DESTROYED;
+            pThis->OnFinalMessage(hWndThis);
+        }
+
+        return FALSE;""",
+"""        // A nested WM_NCDESTROY may have happened while handling an
+        // application message. Never return from the handled branch before
+        // retiring its pending final notification.
+        INT_PTR result = FALSE;
+        if (bRet) {
+            BOOL returnDirectly = FALSE;
+            switch (uMsg) {
+            case WM_COMPAREITEM:
+            case WM_VKEYTOITEM:
+            case WM_CHARTOITEM:
+            case WM_INITDIALOG:
+            case WM_QUERYDRAGICON:
+            case WM_CTLCOLORMSGBOX:
+            case WM_CTLCOLOREDIT:
+            case WM_CTLCOLORLISTBOX:
+            case WM_CTLCOLORBTN:
+            case WM_CTLCOLORDLG:
+            case WM_CTLCOLORSCROLLBAR:
+            case WM_CTLCOLORSTATIC:
+                returnDirectly = TRUE;
+                break;
+            default:
+                break;
+            }
+            if (returnDirectly) {
+                result = (INT_PTR)lRes;
+            } else {
+                if (lRes != 0 && pThis->m_hWnd != NULL && ::IsWindow(pThis->m_hWnd))
+                    ::SetWindowLongPtr(pThis->m_hWnd, DWLP_MSGRESULT, lRes);
+                result = TRUE;
+            }
+        }
+
+        if (uMsg == WM_NCDESTROY) {
+            pThis->m_dwState |= CWindowImplRoot<TBase>::WINSTATE_DESTROYED;
+        }
+
+        if ((pThis->m_dwState & CWindowImplRoot<TBase>::WINSTATE_DESTROYED) && (pThis->m_pCurrentMsg == NULL)) {
+            HWND hWndThis = pThis->m_hWnd;
+            pThis->m_hWnd = NULL;
+            pThis->m_dwState &= ~CWindowImplRoot<TBase>::WINSTATE_DESTROYED;
+            pThis->OnFinalMessage(hWndThis);
+            // OnFinalMessage can delete pThis. Only return the local result.
+        }
+        return result;"""
+),
 ]
 
 
