@@ -146,6 +146,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           ./scripts/windows-atl-com-ratl-p1.ps1 -LLVMRoot $env:LLVM_MINGW_BIN
           if ($LASTEXITCODE -ne 0) { throw 'RATL P1 x64 independent conformance failed' }
+      - name: RATL P1-D nested RGS original-vs-patched x64 regression (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-atl-ratl-nested.ps1 -LLVMRoot $env:LLVM_MINGW_BIN
+          if ($LASTEXITCODE -ne 0) { throw 'RATL P1-D native x64 nested RGS regression failed' }
       - name: Save WTL10 provenance for native ARM64 runner
         if: always()
         uses: actions/upload-artifact@v4
