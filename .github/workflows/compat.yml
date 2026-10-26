@@ -184,6 +184,30 @@ jobs:
             'src/atomic/win_interlocked.c', 'tests/thread_contract.c',
             '-o', 'build-arm64-win/thread_contract_tcc_arm64.exe')
           Assert-Arm64-PE 'build-arm64-win/thread_contract_tcc_arm64.exe'
+          Invoke-Checked $tccArm.FullName @('-Iinclude', 'src/threads/threads.c',
+            'tests/thread_shutdown_overlap.c',
+            '-o', 'build-arm64-win/thread_shutdown_overlap_tcc_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/thread_shutdown_overlap_tcc_arm64.exe'
+          # llvm-mingw C references: native Arm64 runtime parity, not SDK builds.
+          Invoke-Checked $clangArm @('-std=c11', '-Iinclude',
+            'src/atomic/win_interlocked.c', 'tests/atomic_thread.c',
+            '-o', 'build-arm64-win/atomic_thread_llvm_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/atomic_thread_llvm_arm64.exe'
+          Invoke-Checked $clangArm @('-std=c11', '-Iinclude',
+            'src/threads/threads.c', 'src/atomic/win_interlocked.c',
+            'tests/thread_contract.c',
+            '-o', 'build-arm64-win/thread_contract_llvm_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/thread_contract_llvm_arm64.exe'
+          $manifest = @{}
+          Get-ChildItem build-arm64-win -Filter *.exe | ForEach-Object {
+            $manifest[$_.Name] = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content build-arm64-win/manifest.json -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-arm64-actual-runtime-executables
+          path: build-arm64-win/*
+          if-no-files-found: error
       - name: Windows TinyCC x86 required ABI, Atomic32 and Threads runtime
         shell: pwsh
         run: |
@@ -233,3 +257,52 @@ jobs:
               }
             }
           } finally { Pop-Location }
+
+  windows-arm64-native:
+    name: Windows ARM64 native TinyCC/llvm-mingw runtime
+    needs: windows-llvm
+    runs-on: windows-11-vs2026-arm
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: win-arm64-actual-runtime-executables
+          path: arm64-bin
+      - name: Verify ARM64 hardware, PE provenance and execute real binaries
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($arch -ne 'Arm64' -or -not [Environment]::Is64BitProcess) {
+            throw "Native Windows ARM64 required, got $arch"
+          }
+          $manifest = Get-Content arm64-bin/manifest.json -Raw | ConvertFrom-Json -AsHashtable
+          $names = @(
+            'win_api_llvm_arm64.exe',
+            'win_api_tcc_arm64.exe',
+            'atomic_thread_tcc_arm64.exe',
+            'thread_contract_tcc_arm64.exe',
+            'thread_shutdown_overlap_tcc_arm64.exe',
+            'atomic_thread_llvm_arm64.exe',
+            'thread_contract_llvm_arm64.exe'
+          )
+          foreach ($name in $names) {
+            $path = (Resolve-Path (Join-Path 'arm64-bin' $name)).Path
+            [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
+            $pe = [BitConverter]::ToInt32($bytes, 0x3c)
+            if ($pe -lt 64 -or $pe + 6 -ge $bytes.Length -or
+                $bytes[$pe] -ne 0x50 -or $bytes[$pe+1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($bytes, $pe + 4) -ne 0xAA64) {
+              throw "Non-ARM64 PE or corrupt file: $name"
+            }
+            $sha = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($sha -ne $manifest[$name]) { throw "Artifact SHA mismatch: $name" }
+            $repeat = if ($name -like '*thread*') { 10 } else { 5 }
+            for ($i = 1; $i -le $repeat; ++$i) {
+              & $path
+              if ($LASTEXITCODE -ne 0) {
+                throw "Native ARM64 runtime failed: $name repetition $i exit $LASTEXITCODE"
+              }
+            }
+            Write-Host "Native Windows ARM64 PASSED ($repeat runs): $name"
+          }
