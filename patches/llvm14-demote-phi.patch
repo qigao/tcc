@@ -6,3 +6,12 @@ diff --git a/utils/Utils.cpp b/utils/Utils.cpp
 -      DemotePHIToStack(tmpPhi.at(i), f->begin()->getTerminator()->getIterator());
 +      DemotePHIToStack(tmpPhi.at(i), f->begin()->getTerminator());
      }
+diff --git a/bogus/BogusControlFlow.cpp b/bogus/BogusControlFlow.cpp
+--- a/bogus/BogusControlFlow.cpp
++++ b/bogus/BogusControlFlow.cpp
+@@ -311,1 +311,1 @@
+-      new FCmpInst(basicBlock, FCmpInst::FCMP_TRUE, LHS, RHS, *var4);
++      new FCmpInst(*basicBlock, FCmpInst::FCMP_TRUE, LHS, RHS, *var4);
+@@ -347,1 +347,1 @@
+-      new FCmpInst(originalBB, CmpInst::FCMP_TRUE, LHS, RHS, *var6);
++      new FCmpInst(*originalBB, CmpInst::FCMP_TRUE, LHS, RHS, *var6);
