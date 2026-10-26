@@ -64,89 +64,42 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "WTL10 SDI sample compile failed: $cpu" }
           }
           Write-Host 'WTL10 SDI, controls and dialogs sample C++17 compiled on x64/ARM64'
-      - name: Link complete resource-based WTL10 SDI GUI x64/ARM64 (required)
+      - name: Link complete resource-based WTL10 SDI x64/ARM64 (required)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $app = (Resolve-Path tools/wtl10-test).Path
           $atl = (Resolve-Path tools/wtl10-openatl/include).Path
           $header = Get-ChildItem tools/wtl10 -Recurse -Filter atlapp.h | Where-Object {
-            $_.FullName -match '[\\/]include[\\/]atlapp\.h
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: wtl10-openatl-arm64-runtime
-          path: |
-            build-wtl10/poc_openatl_wtl10_arm64.dll
-            build-wtl10/wtl10_client_arm64.exe
-            build-wtl10/manifest.json
-          if-no-files-found: error
-
-  wtl10-arm64-native:
-    name: OpenATL + WTL10 TinyCC C ABI actual Windows ARM64
-    needs: wtl10-windows-cross
-    if: needs.wtl10-windows-cross.result == 'success'
-    runs-on: windows-11-vs2026-arm
-    timeout-minutes: 15
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: wtl10-openatl-arm64-runtime
-          path: wtl10-arm64
-      - name: Verify PE machine and SHA-256 and execute
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ne 'Arm64') { throw 'Native Windows ARM64 runner required' }
-          $manifest = Get-Content wtl10-arm64/manifest.json -Raw | ConvertFrom-Json -AsHashtable
-          foreach ($filename in @('poc_openatl_wtl10_arm64.dll','wtl10_client_arm64.exe')) {
-            $path = (Resolve-Path "wtl10-arm64/$filename").Path
-            [byte[]]$raw = [IO.File]::ReadAllBytes($path)
-            if ($raw.Length -lt 128) { throw "Tiny PE: $filename" }
-            $pe = [BitConverter]::ToInt32($raw, 0x3c)
-            if ($pe -lt 64 -or $pe + 6 -ge $raw.Length -or
-                [BitConverter]::ToUInt16($raw, $pe + 4) -ne 0xAA64) { throw "Not ARM64 PE: $filename" }
-            $sha = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($sha -ne $manifest[$filename]) { throw "ARM64 provenance mismatch: $filename" }
-          }
-          Push-Location wtl10-arm64
-          try {
-            for ($i = 1; $i -le 5; $i++) {
-              & ./wtl10_client_arm64.exe poc_openatl_wtl10_arm64.dll
-              if ($LASTEXITCODE -ne 0) { throw "Native ARM64 WTL10 ABI failed run $i" }
-            }
-          } finally { Pop-Location }
-          Write-Host 'Native Windows ARM64 WTL10/OpenATL/TinyCC C ABI 5/5 PASS'
-
+            $_.Directory.Name -ieq 'Include'
           } | Select-Object -First 1
-          if (-not $header) { throw 'Missing original WTL10 release headers' }
+          if (-not $header) { throw 'Missing WTL10 release headers' }
           $wtl = $header.Directory.FullName
-          if (!(Test-Path (Join-Path $app 'wtltest.rc'))) { throw 'Missing upstream WTL10 resource file' }
-          foreach ($cpu in @('x86_64', 'aarch64')) {
+          if (!(Test-Path (Join-Path $app 'wtltest.rc'))) { throw 'Missing upstream resource' }
+          foreach ($cpu in @('x86_64','aarch64')) {
             $cxx = Join-Path $env:LLVM_MINGW_BIN "$cpu-w64-mingw32-clang++.exe"
             $rc = Join-Path $env:LLVM_MINGW_BIN "$cpu-w64-mingw32-windres.exe"
             if (!(Test-Path $cxx) -or !(Test-Path $rc)) { throw "Missing pinned C++ or resource driver: $cpu" }
             $obj = "build-wtl10/wtltest_$cpu.res.o"
             $exe = "build-wtl10/wtltest_$cpu.exe"
-            $rcArgs = @('-i', (Join-Path $app 'wtltest.rc'), '-I', $app, '-O', 'coff', '-o', $obj)
-            & $rc @rcArgs
+            & $rc '-i' (Join-Path $app 'wtltest.rc') '-I' $app '-O' 'coff' '-o' $obj
             if ($LASTEXITCODE -ne 0) { throw "Resource compiler failed: $cpu" }
-            $args_ = @('-std=c++17','-DUNICODE','-D_UNICODE','-municode','-mwindows',
+            $argv = @('-std=c++17','-DUNICODE','-D_UNICODE','-municode','-mwindows',
               '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
               "-I$atl","-I$wtl","-I$app",(Join-Path $app 'main.cpp'),$obj,
               '-o',$exe,'-static','-lole32','-loleaut32','-luuid','-lcomctl32',
               '-lmsimg32','-luxtheme','-lgdi32','-lcomdlg32','-lshell32',
               '-lshlwapi','-ldwmapi','-luser32')
-            & $cxx @args_
-            if ($LASTEXITCODE -ne 0) { throw "Complete WTL10 SDI link failed: $cpu" }
+            & $cxx @argv
+            if ($LASTEXITCODE -ne 0) { throw "WTL10 SDI link failed: $cpu" }
             python tests/wtl10/verify_pe_machine.py $exe $cpu --require-resources
-            if ($LASTEXITCODE -ne 0) { throw "WTL10 resource PE validation failed: $cpu" }
+            if ($LASTEXITCODE -ne 0) { throw "PE resource verifier failed: $cpu" }
           }
-          Write-Host 'WTL10 SDI fully linked with Windows resources on x64+ARM64; GUI runtime untested'
-      - name: Preserve complete WTL10 SDI PE build evidence
+          Write-Host 'WTL10 complete SDI+RC Windows PE x64/ARM64 linked, GUI execution separately gated'
+      - name: Upload WTL10 resource-linked GUI
         uses: actions/upload-artifact@v4
         with:
-          name: wtl10-resource-linked-gui
+          name: wtl10-full-sdi-pe
           path: |
             build-wtl10/wtltest_*.exe
             build-wtl10/wtltest_*.res.o
@@ -160,7 +113,7 @@ jobs:
             build-wtl10/poc_openatl_wtl10_arm64.dll
             build-wtl10/wtl10_client_arm64.exe
             build-wtl10/manifest.json
-          if-no-files-found: warn
+          if-no-files-found: error
 
   wtl10-arm64-native:
     name: OpenATL + WTL10 TinyCC C ABI actual Windows ARM64
