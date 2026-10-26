@@ -7,8 +7,8 @@ mkdir -p tools/wtl10-host/llvm tools/wtl10-host/wtl10 build-wtl10-host
 curl -fLsS --retry 3 --retry-delay 3 "$HOST_LLVM_URL" -o build-wtl10-host/llvm.tar.xz
 echo "$HOST_LLVM_SHA256  build-wtl10-host/llvm.tar.xz" | shasum -a 256 -c -
 tar -xJf build-wtl10-host/llvm.tar.xz -C tools/wtl10-host/llvm
-DRIVER="$(find "$PWD/tools/wtl10-host/llvm" -type f -name x86_64-w64-mingw32-clang++ -print -quit)"
-test -x "$DRIVER"
+DRIVER="$(find "$PWD/tools/wtl10-host/llvm" -name x86_64-w64-mingw32-clang++ -print -quit)"
+test -x "$DRIVER" || { echo "Pinned clang++ driver not found (symlinks allowed)" >&2; find tools/wtl10-host/llvm -maxdepth 3 -name "*clang++*" >&2; exit 2; }
 MINGW_BIN="$(dirname "$DRIVER")"
 
 curl -fLsS --retry 3 \
