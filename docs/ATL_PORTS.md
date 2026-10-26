@@ -11,4 +11,8 @@ ReactOS RATL survives only as a separate TinyCC compiler C ABI fixture;
 it is not a WTL alternative, and no headers or objects are mixed.
 
 The WTL10 ZIP remains external and licensed by MS-PL.
-OpenATL's RWX thunk is outside qualified production scope.
+Pinned OpenATL still ships an RWX thunk. The POC-only patch
+(`scripts/openatl-wx-hardening.py`) changes it to RW → RX for
+the required native Windows x64/ARM64 hidden-window and resource-dialog
+tests; it is **not** production hardening or an upstream fix.
+CFG/CET, concurrent callbacks, teardown and failure injection remain open.

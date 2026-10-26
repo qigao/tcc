@@ -35,12 +35,51 @@ checked against immutable pins, not vendored in this project.
 4. Resource objects, linked .exe files and DLLs are CI artifacts.
    Neither fsyntax-only nor linking a DLL alone meets this gate.
 
-A linked GUI executable is not evidence of interactive GUI operation.
-Message-map/GUI interaction, real resource display, window teardown,
-CFG/CET and security lifecycle require separately designed execution
-tests. OpenATL CWndProcThunk currently uses RWX pages, deliberately
-excluded from the limited hidden Win32 wrapper probe. Do not use it
-in a production GUI without W^X and platform security qualification.
+## Real Win32 hidden GUI runtime and W^X qualification (2026-10-26)
+
+Source and portable cross-compilation are not a substitute for Windows
+GUI runtime. A separate **non-interactive** `tests/wtl10/gui_runtime.cpp`
+test now executes Clang++-built Windows GUI code on the actual Windows
+x64 and Windows ARM64 hosts, five repetitions per architecture:
+
+- Direct `CWndProcThunk` calls verify the correct hidden `this` pointer
+  and target address; each thunk page must be exactly
+  `PAGE_EXECUTE_READ` with no writable/executable permissions.
+- Real `CWindowImpl` hidden windows dispatch their WTL message maps,
+  receive `WM_APP` and `WM_NCDESTROY`, and invoke `OnFinalMessage`
+  before the object owning the executable thunk is destroyed.
+- Real modeless `CDialogImpl` objects are created from a **compiled
+  Windows .rc** resource, verify a string table/control, dispatch
+  messages, and explicitly destroy/clear HWND ownership.
+- The Linux and macOS hosts independently cross-compile the same
+  native-runtime C++/resources for Windows x64 and ARM64, but **do not
+  execute** Windows programs. The full upstream `wtltest` SDI GUI still
+  only compiles/links with Windows resources; no automated claim about
+  interactive full-SDI behavior is made.
+
+Pinned upstream OpenATL remains untouched. An exact-SHA, fail-closed
+**test-only patch** (`scripts/openatl-wx-hardening.py`) is applied to
+each temporary checkout and rejects any upstream code drift. The patch
+changes the thunk transition from RWX to **RW then RX**, checks
+`VirtualProtect` and `FlushInstructionCache` results, and fixes an
+ARM64 `LDR x16` literal offset (the procedure pointer is at code byte
+20, not byte 16). The initial window/dialog thunk initialization also
+fails closed instead of invoking a missing thunk.
+
+Evidence at exact head `e6e7b9c0269836e7a463ead5a44a0b6dc331459a`:
+[Native Windows WTL10 #40318989038](https://github.com/qigao/tcc/actions/runs/40318989038)
+**2/2 PASS**, including true native Windows ARM64;
+[Linux/macOS WTL10 #40318988652](https://github.com/qigao/tcc/actions/runs/40318988652)
+**2/2 PASS**. Both preserve per-target PE and resource artifacts.
+
+**Still not production qualified:** dynamic CFG/CET target
+registration/mitigations; concurrent `WM_NCDESTROY`/late callback and
+cancel/unload races; injected `VirtualAlloc`/`VirtualProtect` failures;
+real interactive full SDI GUI and accessibility; complete COM
+registration/`QueryInterface`; license/distribution compliance.
+In particular this temporary patch is **not** an upstream OpenATL fix,
+and a passing hidden GUI test does not qualify the production GUI.
+
 
 This is a standalone compiler experiment. PR #1 remains Draft;
 no Salts compiler/ABI/production switch or release is authorized.
