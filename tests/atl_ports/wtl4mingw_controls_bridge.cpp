@@ -61,7 +61,7 @@ poc_atl_probe(const int *items, unsigned count) {
     unsigned failed = 0;
     try {
         INITCOMMONCONTROLSEX common = {sizeof(common),
-            ICC_LISTVIEW_CLASSES | ICC_TREEVIEW_CLASSES | ICC_STANDARD_CLASSES};
+            ICC_LISTVIEW_CLASSES | ICC_TREEVIEW_CLASSES /* EDIT/BUTTON are USER32 */};
         if (!::InitCommonControlsEx(&common)) { ok = false; failed |= 1u; }
         ControlOwner owner;
         RECT rc = {0, 0, 180, 130};
