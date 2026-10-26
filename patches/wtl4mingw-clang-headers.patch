@@ -1,7 +1,7 @@
 diff --git a/atlport/include/atlbase.h b/atlport/include/atlbase.h
 --- a/atlport/include/atlbase.h
 +++ b/atlport/include/atlbase.h
-@@ -69,7 +69,9 @@
+@@ -69,7 +69,10 @@
  WINX_DEFINE_CLSID(
  	_CoClassATLVer30, "{B62F5910-6528-11d1-9611-0000F81E0D0D}",
  	0xb62f5910, 0x6528, 0x11d1, 0x96, 0x11, 0x0, 0x0, 0xf8, 0x1e, 0xd, 0xd);
