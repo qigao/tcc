@@ -46,6 +46,9 @@ int main(void) {
     void *p;
 #if defined(_WIN32) && defined(POC_ATOMIC64_EXTERNAL_DLL)
     if (poc_atomic64_backend_init("missing-poc-atomic64.dll") != -1) return 21;
+    /* A real on-disk DLL with wrong ABI must be unloaded on rejection. */
+    if (poc_atomic64_backend_init("poc_atomic64_badabi.dll") != -1) return 26;
+    if (GetModuleHandleA("poc_atomic64_badabi.dll") != NULL) return 27;
     if (poc_atomic64_backend_init("poc_atomic64_win.dll") != 0) return 22;
     if (poc_atomic64_backend_init("poc_atomic64_win.dll") != -1) return 23;
 #endif
@@ -86,7 +89,14 @@ int main(void) {
     if (poc_thread_join(&publisher, &result) || result != 9 || err) return 20;
 #if defined(_WIN32) && defined(POC_ATOMIC64_EXTERNAL_DLL)
     if (poc_atomic64_backend_shutdown() != 0) return 24;
+    if (GetModuleHandleA("poc_atomic64_win.dll") != NULL) return 28;
     if (poc_atomic64_backend_shutdown() != -1) return 25;
+    /* Reopen only after all workers are joined; verify no stale entrypoints. */
+    if (poc_atomic64_backend_init("poc_atomic64_win.dll") != 0) return 29;
+    poc_atomic64_store(&counter, UINT64_C(0xfedcba9876543210));
+    if (poc_atomic64_load(&counter) != UINT64_C(0xfedcba9876543210)) return 30;
+    if (poc_atomic64_backend_shutdown() != 0 ||
+        GetModuleHandleA("poc_atomic64_win.dll") != NULL) return 31;
 #endif
     puts("atomic64/ptr: high-bit CAS/RMW, MPMC increment, pointer publication PASS");
     return 0;

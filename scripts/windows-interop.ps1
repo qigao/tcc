@@ -37,6 +37,8 @@ try {
   Invoke-Checked $clang @('-c', (Join-Path $root 'src/atomic/win_x64.S'), '-o', 'poc_atomic64_win.obj')
   Invoke-Checked $clang @('-shared', "-I$inc", (Join-Path $root 'src/atomic/win64_dll_exports.c'),
     'poc_atomic64_win.obj', '-o', 'poc_atomic64_win.dll')
+  Invoke-Checked $clang @('-shared', (Join-Path $root 'tests/win_x64/bad_abi.c'),
+    '-o', 'poc_atomic64_badabi.dll')
   Invoke-Checked $TinyCCExe @("-I$inc", '-DPOC_ATOMIC64_EXTERNAL_DLL=1',
     (Join-Path $root 'src/atomic/win64_dll_client.c'),
     (Join-Path $root 'src/atomic/ptr64.c'), (Join-Path $root 'src/threads/threads.c'),
