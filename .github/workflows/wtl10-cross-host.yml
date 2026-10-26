@@ -30,9 +30,15 @@ jobs:
           HOST_LLVM_URL: https://github.com/mstorsjo/llvm-mingw/releases/download/20261020/${{ matrix.archive }}
           HOST_LLVM_SHA256: ${{ matrix.sha256 }}
         run: bash scripts/wtl10-cross-host.sh
+      - name: Full WTL10 sample executable including resource compilation (diagnostic)
+        continue-on-error: true
+        shell: bash
+        run: bash scripts/wtl10-full-app-link.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: wtl10-cross-${{ matrix.host }}
-          path: build-wtl10-host/*.dll
+          path: |
+            build-wtl10-host/*.dll
+            build-wtl10-host/*.exe
           if-no-files-found: warn
