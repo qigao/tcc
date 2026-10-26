@@ -59,12 +59,16 @@ static int close_queue(void) {
 static int produce(void *arg) {
     int i, id = *(int *)arg;
     if (poc_tss_set(&key, arg) || poc_tss_get(&key) != arg) return -1;
+    /* Updating the same TLS key must retain just one destructor callback. */
+    if (poc_tss_set(&key, arg) || poc_tss_get(&key) != arg) return -3;
     for (i = 0; i < ITEMS; ++i) if (push(id * ITEMS + i)) return -2;
     return 100 + id;
 }
 static int consume(void *arg) {
     int value, rc;
     if (poc_tss_set(&key, arg) || poc_tss_get(&key) != arg) return -1;
+    /* Updating the same TLS key must retain just one destructor callback. */
+    if (poc_tss_set(&key, arg) || poc_tss_get(&key) != arg) return -3;
     for (;;) {
         rc = pop(&value);
         if (rc == 1) break;

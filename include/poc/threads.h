@@ -48,6 +48,7 @@ typedef struct poc_condition {
 typedef struct poc_tss {
 #ifdef _WIN32
     DWORD native;
+    poc_tss_destructor destructor;
 #else
     pthread_key_t native;
 #endif

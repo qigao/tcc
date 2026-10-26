@@ -72,3 +72,13 @@ overflow, failed-CAS writeback, exchange/add under contention, exact-width
 neighbor sentinel integrity and message publication. Windows TinyCC uses a
 versioned llvm-mingw DLL dispatcher admitted through the same bounded lease
 Owner; it does not pretend to accept unsupported native COFF object inputs.
+
+## Windows 32-bit native TinyCC diagnostic
+
+The pinned TinyCC-builder release provides `i386-win32-tcc.exe`.
+A distinct Windows runner test compiles and **executes** the x86 ABI
+`cdecl/stdcall` client, Atomic32 contention, the bounded Threads/TLS
+fixture and the shutdown-overlap fixture. The FLS destructor is
+explicitly a `WINAPI` trampoline instead of casting a C callback
+to the incompatible x86 `stdcall` type. The source is still a
+private POC; inspect CI before promoting x86 to required coverage.

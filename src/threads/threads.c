@@ -150,11 +150,32 @@ int poc_condition_destroy(poc_condition *c) {
     c->active = 0;
     return 0;
 }
+#ifdef _WIN32
+/* Win32 FLS callbacks are WINAPI/stdcall on x86, unlike user-provided
+ * cdecl destructor callbacks. Store a per-thread wrapper in the FLS slot
+ * and invoke the user's callback from a correctly typed Windows trampoline.
+ * Allocation and release use the same process heap within this module. */
+typedef struct poc_win_fls_slot {
+    poc_tss_destructor destructor;
+    void *value;
+} poc_win_fls_slot;
+static VOID WINAPI poc_win_fls_callback(PVOID opaque) {
+    poc_win_fls_slot *slot = (poc_win_fls_slot *)opaque;
+    poc_tss_destructor destructor;
+    void *value;
+    if (!slot) return;
+    destructor = slot->destructor;
+    value = slot->value;
+    (void)HeapFree(GetProcessHeap(), 0, slot);
+    if (destructor && value) destructor(value);
+}
+#endif
 int poc_tss_create(poc_tss *key, poc_tss_destructor destructor) {
     if (!key || key->active) return -1;
 #ifdef _WIN32
-    key->native = FlsAlloc((PFLS_CALLBACK_FUNCTION)destructor);
+    key->native = FlsAlloc(poc_win_fls_callback);
     if (key->native == FLS_OUT_OF_INDEXES) return -1;
+    key->destructor = destructor;
 #else
     if (pthread_key_create(&key->native, destructor) != 0) return -1;
 #endif
@@ -164,7 +185,25 @@ int poc_tss_create(poc_tss *key, poc_tss_destructor destructor) {
 int poc_tss_set(poc_tss *key, void *value) {
     if (!key || !key->active) return -1;
 #ifdef _WIN32
-    return FlsSetValue(key->native, value) ? 0 : -1;
+    poc_win_fls_slot *slot = (poc_win_fls_slot *)FlsGetValue(key->native);
+    if (!value) {
+        if (!FlsSetValue(key->native, NULL)) return -1;
+        if (slot) (void)HeapFree(GetProcessHeap(), 0, slot);
+        return 0;
+    }
+    if (slot) {
+        slot->value = value;
+        return 0;
+    }
+    slot = (poc_win_fls_slot *)HeapAlloc(GetProcessHeap(), 0, sizeof(*slot));
+    if (!slot) return -1;
+    slot->destructor = key->destructor;
+    slot->value = value;
+    if (!FlsSetValue(key->native, slot)) {
+        (void)HeapFree(GetProcessHeap(), 0, slot);
+        return -1;
+    }
+    return 0;
 #else
     return pthread_setspecific(key->native, value) == 0 ? 0 : -1;
 #endif
@@ -172,7 +211,8 @@ int poc_tss_set(poc_tss *key, void *value) {
 void *poc_tss_get(poc_tss *key) {
     if (!key || !key->active) return NULL;
 #ifdef _WIN32
-    return FlsGetValue(key->native);
+    poc_win_fls_slot *slot = (poc_win_fls_slot *)FlsGetValue(key->native);
+    return slot ? slot->value : NULL;
 #else
     return pthread_getspecific(key->native);
 #endif
@@ -181,6 +221,7 @@ int poc_tss_destroy(poc_tss *key) {
     if (!key || !key->active) return -1;
 #ifdef _WIN32
     if (!FlsFree(key->native)) return -1;
+    key->destructor = NULL;
 #else
     if (pthread_key_delete(key->native) != 0) return -1;
 #endif

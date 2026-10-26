@@ -75,3 +75,17 @@ through the existing 64-lease protected DLL facade. Any unknown operation,
 version, width or unaligned 16-bit request fails closed. Tests cover rollover
 CAS/RMW, 4-worker contention and 8-bit/16-bit acquire/release publication.
 The architecture still does not qualify generic `stdatomic.h` semantics.
+
+## Windows x86 FLS callback ABI hardening
+
+The pinned Windows TinyCC package includes `i386-win32-tcc.exe`, so its
+32-bit runtime is tested independently rather than inferred from i686 Clang.
+The diagnostic x86 run revealed a real `0xC0000005` crash during repeated
+thread/TLS tests. The original code wrongly cast a `cdecl` user destructor
+to Win32 `PFLS_CALLBACK_FUNCTION` (`stdcall` on x86). The replacement
+registers a genuine `VOID WINAPI` callback. Each FLS value is held in a
+small process-heap wrapper containing the callback and value; the trampoline
+releases its wrapper and dispatches to the user callback with its correct
+calling convention. Repeated TSS set of the same key reuses the wrapper and
+must still deliver exactly one destructor. No STL, C++ object, or CRT-owned
+memory crosses the DLL ABI. Key destruction remains quiescent-only.
