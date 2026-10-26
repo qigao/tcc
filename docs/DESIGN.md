@@ -196,3 +196,12 @@ installed Salts SDK behavior. The upstream TCC `-v` label may say
 Android interpreter, and actual Bionic guest execution are stronger
 evidence and must be recorded rather than assuming the text label
 implies glibc.
+
+## macOS ad-hoc Hardened Runtime signing
+
+The required Darwin test uses `codesign --options runtime`, strict
+signature verification, and a TinyCC-produced Mach-O test program
+loading an ad-hoc-signed Apple Clang dylib by absolute path on both
+native x86-64 and arm64 macOS. Five calls per target check the
+real atomic provider. This does **not** imply Developer ID signing,
+notarization, App Sandbox entitlements or signed SDK packaging.

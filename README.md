@@ -160,3 +160,15 @@ writeback, carries across the 32-bit boundary, runs 4 concurrent
 increment workers and tests release/acquire message publication.
 The DLL uses the same i686 64-lease owner; no direct object-file
 interoperability or generic C11 `_Atomic` compatibility is claimed.
+
+## macOS Hardened Runtime ad-hoc acceptance
+
+On the native Intel and Apple Silicon GitHub macOS runners, a required
+test invokes `codesign --force --options runtime --sign -` on
+a TinyCC-built Mach-O executable and a Clang-built atomic provider
+dylib. It strictly verifies both signatures and runs five calls through
+a `dlopen` / `dlsym` C ABI using the dylib's absolute pathname.
+No `DYLD_*` override or library-validation-disabling entitlement is
+used. This proves **ad-hoc Hardened Runtime execution** only, not
+Developer ID identity, Apple notarization, an App Sandbox bundle or
+distribution to end users.

@@ -68,9 +68,8 @@ jobs:
           for test in atomic32_test atomic_small_test atomic64_test thread_contract; do
             for i in 1 2 3 4 5; do "./build-macos/$test"; done
           done
-      - name: Hardened Runtime ad-hoc signing and strict dylib load (diagnostic)
+      - name: Hardened Runtime ad-hoc signing and strict dylib load (required)
         shell: bash
-        continue-on-error: true
         run: |
           set -euo pipefail
           TCC="$GITHUB_WORKSPACE/tools/tcc-installed/bin/tcc"

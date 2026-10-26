@@ -17,7 +17,7 @@ is **opt-in diagnostic**, never a substitute for physical device execution.
    Android W^X restrictions.
 3. Set repository variable `TCC_ANDROID_ARM64_DEVICE_ENABLED=true`
    only after the runner and device are ready. Optionally specify
-   `TCC_ANDROID_ARM64_SERIAL` as a repository variable; otherwise exactly
+   `TCC_ANDROID_ARM64_SERIAL` as a repository secret; otherwise exactly
    one connected authorized device is required. Keep device serials and
    logcat out of uploaded artifacts.
 4. On a trusted, repository-owned Draft PR branch
