@@ -206,4 +206,52 @@ s = change(s, "operator new(unsigned int s, int, const char *, int)",
 s = change(s, "operator new(\n        unsigned int,\n        int,",
            "operator new(\n        size_t,\n        int,")
 crtdbg.write_text(s, encoding="utf-8")
+
+# The old WTL8 controls header re-declares RichEdit enum and uses a
+# non-dependent type alias before its typedef. Both are rejected by the
+# pinned modern MinGW SDK/Clang, even for ordinary 32-bit compilations.
+controls = root / "wtl/include/atlctrls.h"
+s = controls.read_text(encoding="utf-8")
+start = s.index("// -------------Added by Mao yongjun 2008-02-25")
+end = s.index("//---------------------------------------------------------", start)
+s = s[:start] + ("// UNDONAMEID is supplied by modern <richedit.h>; "
+                 "do not redefine an SDK type.\n") + s[end:]
+s = change(s, "(CTreeViewCtrlEx*)this", "this")
+for letter in ("W", "A"):
+    for name, space in (("LVITEM", "    "), ("LPLVITEM", "  "),
+                        ("LVITEM_V1_SIZE", " ")):
+        source = f"    #define {name}{space}{name}{letter}" if name != "LVITEM_V1_SIZE" else f"    #define {name} {name}{letter}"
+        dest = f"    #ifndef {name}\n{source}\n    #endif"
+        s = change(s, source, dest)
+controls.write_text(s, encoding="utf-8")
+
+# WTL8's RichEdit font-dialog template derives from a dependent base.
+# Clang correctly requires this-> for inherited members and methods.
+# Scope this textual adaptation to the exact affected template only.
+dialogs = root / "wtl/include/atldlgs.h"
+s = dialogs.read_text(encoding="utf-8")
+start = s.index("// -----------------Add by Mao yongjun 2008.02.25")
+end = s.index("#ifndef __ATLCOM_H__", start)
+s = s[:start] + """// Old WTL8 SDK type redeclarations omitted: current <commdlg.h>
+ // and <shlobj.h> define NMOBJECTNOTIFY and IPrintDialogCallback.
+#ifndef PSN_GETOBJECT
+#define PSN_GETOBJECT (PSN_FIRST-10)
+#endif
+#ifndef PSN_TRANSLATEACCELERATOR
+#define PSN_TRANSLATEACCELERATOR (PSN_FIRST-12)
+#endif
+#ifndef PSN_QUERYINITIALFOCUS
+#define PSN_QUERYINITIALFOCUS (PSN_FIRST-13)
+#endif
+""" + s[end:]
+start = s.index("class ATL_NO_VTABLE CRichEditFontDialogImpl")
+end = s.index("\nclass CRichEditFontDialog :", start)
+region = s[start:end]
+for name in ("m_cf", "m_lf", "IsBold", "IsItalic", "GetSize",
+             "GetFaceName", "IsUnderline", "IsStrikeOut", "GetColor"):
+    region = __import__("re").sub(r"(?<![A-Za-z0-9_.>])\b" + name + r"\b",
+                                  "this->" + name, region)
+s = s[:start] + region + s[end:]
+dialogs.write_text(s, encoding="utf-8")
+print("WTL8 full controls/dialogs Clang header compatibility applied")
 print("Winx ATL port: W^X thunk, pointer-sized Win32 and size_t CRT applied")
