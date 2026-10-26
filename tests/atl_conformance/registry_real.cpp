@@ -168,8 +168,9 @@ static bool recoveryRequest(std::wstring& path,DWORD& proof) {
     unsigned long parsed=std::wcstoul(hex,&end,16);
     if(end==hex || *end!=0 || parsed==0 || parsed>0xFFFFFFFFul)
         return false;
-    if(static_cast<DWORD>(parsed)!=(id.Data1^0xA1339C47u==0?
-         0x13777BC5u : id.Data1^0xA1339C47u))
+    DWORD expectedProof=id.Data1 ^ 0xA1339C47u;
+    if(expectedProof==0)expectedProof=0x13777BC5u;
+    if(static_cast<DWORD>(parsed)!=expectedProof)
         return false;
     path=key;
     proof=static_cast<DWORD>(parsed);
