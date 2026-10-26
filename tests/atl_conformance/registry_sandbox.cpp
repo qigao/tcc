@@ -31,8 +31,13 @@ struct ScratchRegistry {
         const LSTATUS create=::RegCreateKeyExW(
             HKEY_CURRENT_USER,path.c_str(),0,nullptr,REG_OPTION_NON_VOLATILE,
             KEY_ALL_ACCESS,nullptr,&key,&disposition);
-        if(create!=ERROR_SUCCESS || disposition!=REG_CREATED_NEW_KEY)
+        if(create!=ERROR_SUCCESS || disposition!=REG_CREATED_NEW_KEY) {
+            // A collision must never make cleanup delete an existing user's
+            // key, however unlikely a UUID collision may be.
+            if(key) { ::RegCloseKey(key); key=nullptr; }
+            path.clear();
             return false;
+        }
         // This changes ONLY the calling process's interpretation of HKCR.
         if(::RegOverridePredefKey(HKEY_CLASSES_ROOT,key)!=ERROR_SUCCESS)
             return false;
