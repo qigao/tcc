@@ -220,7 +220,7 @@ s = change(s, "(CTreeViewCtrlEx*)this", "this")
 for letter in ("W", "A"):
     for name, space in (("LVITEM", "    "), ("LPLVITEM", "  "),
                         ("LVITEM_V1_SIZE", " ")):
-        source = f"    #define {name}{space}{name}{letter}" if name != "LVITEM_V1_SIZE" else f"    #define {name} {name}{letter}"
+        source = f"    #define {name}{space}{name}{letter}" if name != "LVITEM_V1_SIZE" else f"    #define {name} LVITEM{letter}_V1_SIZE"
         dest = f"    #ifndef {name}\n{source}\n    #endif"
         s = change(s, source, dest)
 controls.write_text(s, encoding="utf-8")
