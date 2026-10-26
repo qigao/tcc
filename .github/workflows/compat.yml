@@ -211,8 +211,7 @@ jobs:
             }
           } finally { Pop-Location }
           Write-Host 'WTL4MinGW x64 CWindowImpl callback RX thunk 5/5 PASS'
-      - name: WTL4MinGW x64/ARM64 WTL8 controls/frame/dialog header diagnostic
-        continue-on-error: true
+      - name: WTL4MinGW x64/ARM64 WTL8 controls/frame/dialog required headers
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -227,6 +226,50 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "WTL8 full Win64 header parse failed on $triple" }
           }
           Write-Host 'WTL8 frame/control/dialog headers x64 ARM64 parsing PASS'
+      - name: WTL4MinGW x64 control HWND and ARM64 DLL diagnostic
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tiny64 = Get-ChildItem tools/tinycc-win -Recurse -Filter tcc.exe | Select-Object -First 1
+          $tinyArm = Get-ChildItem tools/tinycc-win -Recurse -Filter arm64-win32-tcc.exe | Select-Object -First 1
+          $clang64 = Join-Path $env:LLVM_MINGW_BIN 'x86_64-w64-mingw32-clang++.exe'
+          $clangArm = Join-Path $env:LLVM_MINGW_BIN 'aarch64-w64-mingw32-clang++.exe'
+          if (-not $tiny64 -or -not $tinyArm -or
+              -not (Test-Path $clang64) -or -not (Test-Path $clangArm)) {
+            throw 'Missing pinned clang++ or TinyCC drivers'
+          }
+          $common = @('-shared','-std=c++11','-O0','-include','algorithm',
+            '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
+            '-fms-extensions','-Itools/wtl4mingw/atlport/include',
+            '-Itools/wtl4mingw/stdext/include','-Itools/wtl4mingw/wtl/include',
+            'tests/atl_ports/wtl4mingw_controls_bridge.cpp','-static',
+            '-lole32','-loleaut32','-lcomctl32','-lshlwapi',
+            '-luuid','-lgdi32','-luser32','-ladvapi32')
+          & $clang64 @common '-o' 'build-interop/poc_wtl4mingw_controls_x64.dll'
+          if ($LASTEXITCODE -ne 0) { throw 'WTL8 common-controls x64 C++ DLL build failed' }
+          & $tiny64.FullName 'tests/atl_ports/client.c' '-o' 'build-interop/wtl_controls_client_x64.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'TinyCC x64 control caller build failed' }
+          Push-Location build-interop
+          try {
+            for ($i = 1; $i -le 5; $i++) {
+              & ./wtl_controls_client_x64.exe poc_wtl4mingw_controls_x64.dll
+              if ($LASTEXITCODE -ne 0) { throw "WTL8 x64 controls runtime failed: $LASTEXITCODE" }
+            }
+          } finally { Pop-Location }
+          # Cross-build for native ARM64 runner in the next acceptance phase.
+          & $clangArm @common '-o' 'build-interop/poc_wtl4mingw_controls_arm64.dll'
+          if ($LASTEXITCODE -ne 0) { throw 'WTL8 controls AArch64 DLL build failed' }
+          & $tinyArm.FullName 'tests/atl_ports/client.c' '-o' 'build-interop/wtl_controls_client_arm64.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'TinyCC ARM64 control caller build failed' }
+          foreach ($name in @('poc_wtl4mingw_controls_arm64.dll','wtl_controls_client_arm64.exe')) {
+            [byte[]]$bytes = [IO.File]::ReadAllBytes((Resolve-Path "build-interop/$name").Path)
+            $pe = [BitConverter]::ToInt32($bytes, 0x3c)
+            if ([BitConverter]::ToUInt16($bytes, $pe + 4) -ne 0xAA64) {
+              throw "Expected ARM64 PE: $name"
+            }
+          }
+          Write-Host 'WTL8 controls native x64 5/5 and ARM64 cross-build PASS'
       - name: Windows ARM64 TinyCC and llvm-mingw required PE compile (no runtime)
         shell: pwsh
         run: |
