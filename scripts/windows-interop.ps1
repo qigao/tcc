@@ -34,7 +34,8 @@ try {
   $rcompat = Join-Path $RATLRoot 'compat'
   Invoke-Checked $clangxx @('-shared', '-std=c++17', '-O0', '-D__RATL__', '-DINITGUID',
     '-D_USE_PSEH3', '-D_CRT_NON_CONFORMING_SWPRINTFS', "-I$rinc", "-I$rcompat",
-    "-I$(Join-Path $rcompat 'sal')", "-I$(Join-Path $rcompat 'excpt')",
+    # The llvm-mingw CRT has native excpt.h/sal.h. Do not shadow them with
+    # RATL fallback headers: compat/excpt lacks EXCEPTION_DISPOSITION.
     (Join-Path $root 'tests/ratl/bridge.cpp'), '-o', 'poc_ratl_bridge.dll',
     '-static', '-lole32', '-loleaut32', '-luuid', '-lrpcrt4', '-lshlwapi', '-lgdi32', '-ladvapi32', '-lkernel32')
   Invoke-Checked $TinyCCExe @((Join-Path $root 'tests/ratl/client.c'), '-o', 'ratl_client_tcc.exe')
