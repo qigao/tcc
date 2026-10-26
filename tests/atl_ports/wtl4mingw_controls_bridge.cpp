@@ -22,6 +22,7 @@
 #include <atlframe.h>
 #include <commctrl.h>
 #include <stdint.h>
+#include <stdio.h>
 
 WTL::CAppModule _Module;
 
@@ -57,16 +58,17 @@ poc_atl_probe(const int *items, unsigned count) {
     HRESULT init = _Module.Init(NULL, ::GetModuleHandle(NULL));
     if (FAILED(init)) { ::CoUninitialize(); return -4; }
     bool ok = true;
+    unsigned failed = 0;
     try {
         INITCOMMONCONTROLSEX common = {sizeof(common),
             ICC_LISTVIEW_CLASSES | ICC_TREEVIEW_CLASSES | ICC_STANDARD_CLASSES};
-        if (!::InitCommonControlsEx(&common)) ok = false;
+        if (!::InitCommonControlsEx(&common)) { ok = false; failed |= 1u; }
         ControlOwner owner;
         RECT rc = {0, 0, 180, 130};
         HWND parent = NULL;
         if (ok) parent = owner.Create(NULL, rc, TEXT("WTL controls"),
                                        WS_POPUP | WS_CLIPCHILDREN, 0, 0);
-        if (!parent) ok = false;
+        if (!parent) { ok = false; failed |= 2u; }
         if (ok) {
             HWND hEdit = ::CreateWindowEx(0, TEXT("EDIT"), TEXT("original"),
                 WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -81,7 +83,7 @@ poc_atl_probe(const int *items, unsigned count) {
             HWND hTree = ::CreateWindowEx(0, WC_TREEVIEW, TEXT(""),
                 WS_CHILD | TVS_HASLINES, 0, 92, 160, 36, parent,
                 (HMENU)(UINT_PTR)104, ::GetModuleHandle(NULL), NULL);
-            if (!hEdit || !hButton || !hList || !hTree) ok = false;
+            if (!hEdit || !hButton || !hList || !hTree) { ok = false; failed |= 4u; }
             if (ok) {
                 WTL::CEdit edit(hEdit);
                 WTL::CButton button(hButton);
@@ -90,35 +92,39 @@ poc_atl_probe(const int *items, unsigned count) {
                 char buffer[64] = {0};
                 edit.SetWindowText(TEXT("text accepted"));
                 if (edit.GetWindowText(buffer, 64) != 13 ||
-                    ::lstrcmpA(buffer, "text accepted") != 0) ok = false;
+                    ::lstrcmpA(buffer, "text accepted") != 0) { ok = false; failed |= 8u; }
                 button.SetCheck(BST_CHECKED);
-                if (button.GetCheck() != BST_CHECKED) ok = false;
+                if (button.GetCheck() != BST_CHECKED) { ok = false; failed |= 16u; }
 
                 int item = list.InsertItem(0, TEXT("record"));
-                if (item != 0 || list.GetItemCount() != 1) ok = false;
+                if (item != 0 || list.GetItemCount() != 1) { ok = false; failed |= 32u; }
                 const DWORD_PTR highData = ((DWORD_PTR)0xABCDEF01ULL << 32) |
                                             (DWORD_PTR)0x23456789u;
                 if (!list.SetItemData(0, highData) ||
-                    list.GetItemData(0) != highData) ok = false;
+                    list.GetItemData(0) != highData) { ok = false; failed |= 64u; }
                 HTREEITEM root = tree.InsertItem(TEXT("root"), TVI_ROOT, TVI_LAST);
                 if (!root || !tree.SetItemData(root, highData) ||
-                    tree.GetItemData(root) != highData) ok = false;
+                    tree.GetItemData(root) != highData) { ok = false; failed |= 128u; }
 
                 LRESULT result = ::SendMessage(parent, WM_APP + 79,
                                                (WPARAM)15, (LPARAM)3);
-                if (result != 18 || owner.events != 1) ok = false;
+                if (result != 18 || owner.events != 1) { ok = false; failed |= 256u; }
                 MEMORY_BASIC_INFORMATION page = {};
                 WNDPROC callback = owner.m_thunk.GetWNDPROC();
                 if (!callback ||
                     ::VirtualQuery((LPCVOID)callback, &page, sizeof(page))
                         != sizeof(page) ||
-                    (page.Protect & 0xff) != PAGE_EXECUTE_READ) ok = false;
+                    (page.Protect & 0xff) != PAGE_EXECUTE_READ) { ok = false; failed |= 512u; }
             }
-            if (!::DestroyWindow(parent)) ok = false;
-            if (::IsWindow(parent) || owner.m_hWnd != NULL) ok = false;
+            if (!::DestroyWindow(parent)) { ok = false; failed |= 1024u; }
+            if (::IsWindow(parent) || owner.m_hWnd != NULL) { ok = false; failed |= 2048u; }
         }
-    } catch (...) { ok = false; }
+    } catch (...) { ok = false; failed |= 4096u; }
     _Module.Term();
     ::CoUninitialize();
-    return ok ? sum : -5;
+    if (!ok) {
+        fprintf(stderr, "WTL64 real controls failure mask=0x%08X Win32=%lu\n",
+                failed, (unsigned long)::GetLastError());
+    }
+    return ok ? sum : -1000 - (int)failed;
 }
