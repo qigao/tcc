@@ -76,9 +76,19 @@ Owner; it does not pretend to accept unsupported native COFF object inputs.
 ## Windows 32-bit native TinyCC diagnostic
 
 The pinned TinyCC-builder release provides `i386-win32-tcc.exe`.
-A distinct Windows runner test compiles and **executes** the x86 ABI
+A required Windows runner test compiles and **executes** the x86 ABI
 `cdecl/stdcall` client, Atomic32 contention, the bounded Threads/TLS
 fixture and the shutdown-overlap fixture. The FLS destructor is
 explicitly a `WINAPI` trampoline instead of casting a C callback
-to the incompatible x86 `stdcall` type. The source is still a
-private POC; inspect CI before promoting x86 to required coverage.
+to the incompatible x86 `stdcall` type. The source remains a private POC. The Windows x86 TinyCC gate is now **required**, with 20 repeated executions of the two lifecycle fixtures; full RATL/COM support on x86 has not been qualified.
+
+## Windows ARM64 cross-compilation (not runtime)
+
+The pinned Windows TinyCC-builder also provides `arm64-win32-tcc.exe`.
+On the x64 Windows runner a **required, compile-only** job uses
+`aarch64-w64-mingw32-clang.exe` and `arm64-win32-tcc.exe`
+to generate Windows PE images. It verifies the PE signature and
+`IMAGE_FILE_MACHINE_ARM64` (`0xAA64`) and builds sample Windows API,
+Atomic32 and bounded Threads clients. This does **not** execute Windows
+ARM64 binaries or qualify native ARM64 Windows thread/atomic behavior.
+Only a native Windows ARM64 machine/runner may close that runtime gate.

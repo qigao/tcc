@@ -9,6 +9,11 @@
 | `DosX-dev/obfus.h` | `52c971a8270e3dd27f3c4fba9f464150b63bf021` | MIT with compiled-distribution exception; opt-in smoke test |
 | `eshard/obfuscator-llvm` | `ad26aa21b90cc5c5118d32114b674d1455f54168` | LLVM plugin; Illinois/NCSA-style license; plugin must match host LLVM version |
 
-The GitHub Actions setup pins binary archives by SHA256 and source repositories by immutable commit. These pins are evidence inputs, not a blanket security endorsement. `obfus.h` is obtained from a commit-pinned raw GitHub URL during the **diagnostic** Windows test, and retains its own license upstream. No binaries are checked in. `llvm-mingw`'s CRT selection is UCRT and the POC does not mix static objects from incompatible C++ runtimes; only C exports cross module boundaries.
+The GitHub Actions setup pins binary archives by SHA256 and source repositories by immutable commit. These pins are evidence inputs, not a blanket security endorsement. `obfus.h` is obtained from a commit-pinned raw GitHub URL during the **required** Windows semantic test, and retains its own license upstream. No binaries are checked in. `llvm-mingw`'s CRT selection is UCRT and the POC does not mix static objects from incompatible C++ runtimes; only C exports cross module boundaries.
 
 The LLVM 14 host pass qualification applies the audited local compatibility patch `patches/llvm14-demote-phi.patch` to the pinned upstream checkout at build time. This does not claim upstream LLVM 14 native compatibility or alter the upstream repository. The matching host LLVM version and pass output are verified in [the LLVM obfuscation CI](../.github/workflows/llvm-obfuscator-poc.yml).
+
+The pinned TinyCC-builder archive supplies three distinct Windows driver
+binaries: `tcc.exe` for x64, `i386-win32-tcc.exe` for Windows x86
+native execution, and `arm64-win32-tcc.exe` for ARM64 Windows
+**cross-compilation only** in the current x64 runner.

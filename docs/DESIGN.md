@@ -80,12 +80,22 @@ The architecture still does not qualify generic `stdatomic.h` semantics.
 
 The pinned Windows TinyCC package includes `i386-win32-tcc.exe`, so its
 32-bit runtime is tested independently rather than inferred from i686 Clang.
-The diagnostic x86 run revealed a real `0xC0000005` crash during repeated
+The initial diagnostic x86 run revealed a real `0xC0000005` crash during repeated
 thread/TLS tests. The original code wrongly cast a `cdecl` user destructor
 to Win32 `PFLS_CALLBACK_FUNCTION` (`stdcall` on x86). The replacement
 registers a genuine `VOID WINAPI` callback. Each FLS value is held in a
 small process-heap wrapper containing the callback and value; the trampoline
 releases its wrapper and dispatches to the user callback with its correct
 calling convention. Repeated TSS set of the same key reuses the wrapper and
-must still deliver exactly one destructor. No STL, C++ object, or CRT-owned
+must still deliver exactly one destructor. The patched Windows x86 TinyCC
+ABI/Atomic32 tests are now required and both lifecycle fixtures repeat 20 times. No STL, C++ object, or CRT-owned
 memory crosses the DLL ABI. Key destruction remains quiescent-only.
+
+## Windows ARM64 cross-compiler gate
+
+The pinned `arm64-win32-tcc.exe` and llvm-mingw AArch64 drivers generate
+PE/COFF ARM64 sample executables on an x64 CI host. Machine word `0xAA64`
+is independently parsed from the PE header. The gate covers compile and
+link of selected Windows API, Atomic32 and thread sources; it does not
+execute these binaries. Windows ARM64 native execution and system
+interoperability are still explicitly unqualified.
