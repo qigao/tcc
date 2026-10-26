@@ -1,0 +1,38 @@
+name: WTL10 OpenATL non-Windows llvm-mingw cross-compilation
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cross:
+    name: Linux macOS cross-build WTL10 on ${{ matrix.host }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: Linux
+            runner: ubuntu-24.04
+            archive: llvm-mingw-20261020-ucrt-ubuntu-22.04-x86_64.tar.xz
+            sha256: 55064b60b991a1e1e8090b8c2f84e82b22cfe5903d12c159d65064cf5e8ae335
+          - host: macOS
+            runner: macos-15
+            archive: llvm-mingw-20261020-ucrt-macos-universal.tar.xz
+            sha256: e9c13e4ede38e715003ffc674d4d00a1088df8235439d1f0c16188ff0704c17e
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Windows x64 and ARM64 WTL10 C++ from this host
+        shell: bash
+        env:
+          HOST_LLVM_URL: https://github.com/mstorsjo/llvm-mingw/releases/download/20261020/${{ matrix.archive }}
+          HOST_LLVM_SHA256: ${{ matrix.sha256 }}
+        run: bash scripts/wtl10-cross-host.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wtl10-cross-${{ matrix.host }}
+          path: build-wtl10-host/*.dll
+          if-no-files-found: warn
