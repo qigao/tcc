@@ -8,7 +8,7 @@ jobs:
   android-tcc-cross:
     name: Android ${{ matrix.abi }} TinyCC NDK build
     runs-on: ubuntu-24.04
-    continue-on-error: true
+    # Exact Android native/NDK qualification must pass; no silent fallback.
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -64,7 +64,7 @@ jobs:
     name: Android x86_64 emulator true TinyCC runtime
     needs: android-tcc-cross
     runs-on: ubuntu-24.04
-    continue-on-error: true
+    # Exact Android native/NDK qualification must pass; no silent fallback.
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4

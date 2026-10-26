@@ -155,3 +155,44 @@ returns a 64-bit integer *across the DLL boundary*, avoiding an
 untested compiler-specific lowering. Operations still hold a lease
 for the entire native call. This is a **private** ABI, not a
 replacement for C11 `stdatomic.h`.
+
+## macOS and Android platform admission — 2026-10-26
+
+**macOS Darwin (required native Intel x86-64 and Apple ARM64):**
+Build pinned TinyCC source natively, compile Mach-O output using TCC,
+verify Mach-O binary architecture with `file` and execute on the same
+physical architecture. The POC checks `pthread`, libSystem via
+`dlopen/dlsym`, monotonic clocks, bounded queue and shutdown overlap.
+Apple Clang compiles a native `.dylib` with `__atomic` builtins; TCC C
+consumers link that dylib for Atomic8/16/32/64 and pointer CAS, 5
+repetitions each. This proves native consumer ABI, **not** that TinyCC
+directly implements the entire C11 atomic language or that Mach-O
+objects can be indiscriminately mixed across compilers. Darwin
+code-signing and installed SDK packaging are independent acceptance
+workstreams.
+
+**Android/Bionic (required NDK cross + x86-64 Emulator native):**
+The exact TinyCC source is compiled using installed Android NDK Clang
+for both `x86_64-linux-android` and `aarch64-linux-android`, API 29.
+`c2str.exe` runs at build time and therefore must be built using
+the **Linux host** compiler, not the Android target compiler. Bionic
+implements pthread functions in libc, so the NDK build drops
+`-lpthread` rather than weakening synchronization. The produced
+Android executables are PIE with interpreter `/system/bin/linker64`.
+
+On a genuine x86-64 Android 35 Emulator, the built `tcc` and its
+`libtcc.so` are pushed to `/data/local/tmp/tcc_poc`, executed with
+`LD_LIBRARY_PATH` scoped to that directory, and an on-device
+`tcc -c` builds a relocatable ELF object. The object is pulled,
+linked with NDK Clang to a runnable Bionic client, uploaded again and
+executed successfully. A separate native NDK-built sample checks
+Bionic pthread, monotonic time and `dlopen`.
+
+**Unqualified Android scopes:** actual ARM64 Android runtime/Termux
+packaging, Android application sandbox and Play distribution, installed
+C11 thread/atomic runtime consumers, provider DSO cancellation and
+installed Salts SDK behavior. The upstream TCC `-v` label may say
+`x86_64 Linux` for Android ELF targets; the configure Target OS,
+Android interpreter, and actual Bionic guest execution are stronger
+evidence and must be recorded rather than assuming the text label
+implies glibc.

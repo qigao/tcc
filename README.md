@@ -17,6 +17,28 @@ This repository is an **experimental, standalone C ABI / compiler qualification 
 
 `RATL` means *ReactOS Active Template Library*, a **Windows C++ ATL** implementation, **not** an atomic primitives library. TinyCC compiles C only: all RATL C++ objects stay behind an exported, version-checked C ABI. Windows and Linux platform backends are distinct and never silently fall back to plain volatile storage.
 
+## macOS and Android native compiler gates
+
+- **macOS Intel x86-64 and Apple Silicon ARM64:** pinned TinyCC is built
+  natively, generates and executes Mach-O programs on native GitHub-hosted
+  runners, tests `pthread`, Darwin `libSystem`, monotonic clocks and
+  `dlopen`. Apple Clang builds a native Atomic8/16/32/64 and pointer CAS
+  `.dylib`; the **TinyCC-compiled C clients** run 5× against this ABI.
+  The CI must not claim TinyCC's own `_Atomic(T)` support from this test.
+- **Android x86-64:** pinned TinyCC and `libtcc.so` are compiled against
+  Android NDK/Bionic (PIE, `/system/bin/linker64`) and **actually run** on
+  an Android 35 x86-64 Emulator. The on-device TinyCC emits a relocatable
+  ELF `.o` that NDK Clang then links into a native Android executable,
+  which is pushed back and executed on the same emulator.
+- **Android ARM64:** pinned Android/Bionic TinyCC and reference binaries
+  compile and link successfully with NDK Clang. **No native Android ARM64
+  device/emulator execution is yet qualified**. Android x86-64 Emulator
+  results must not be used to waive that ARM64 gate.
+
+The scripts in `scripts/android-emulator-smoke.sh` and
+`scripts/android-guest-smoke.sh` preserve these distinct evidence levels.
+Neither platform builds the Salts production library or changes its ABI.
+
 ## Linux quick start
 
 ```sh
