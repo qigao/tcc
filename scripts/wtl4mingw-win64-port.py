@@ -53,6 +53,8 @@ changes = [
      "::SetWindowLongPtr(m_hWnd, GWLP_WNDPROC, (LONG_PTR)m_pfnSuperWindowProc)", 2),
     ("::SetWindowLong(pThis->m_hWnd, DWL_MSGRESULT, lRes)",
      "::SetWindowLongPtr(pThis->m_hWnd, DWLP_MSGRESULT, (LONG_PTR)lRes)", 1),
+    ("CHAR m_szAutoName[13];", "CHAR m_szAutoName[32];", 1),
+    ("WCHAR m_szAutoName[13];", "WCHAR m_szAutoName[32];", 1),
     ("(LPCTSTR)MAKELONG(atom, 0)", "(LPCTSTR)MAKEINTATOM(atom)", 2),
     ("nID = (UINT)this;", "nID = (UINT_PTR)this;", 2),
     ("UINT nID, ATOM atom", "UINT_PTR nID, ATOM atom", 2),
@@ -60,6 +62,27 @@ changes = [
 ]
 for old, new, count in changes:
     s = change(s, old, new, count)
+# Winx's auto-generated class identifier used a 32-bit truncation of the
+# WNDCLASSEX address in a 13-character buffer. Windows x64/ARM64 needs
+# the entire pointer plus the ATL: prefix; bound all writes to 32 chars.
+s = change(s,
+    'wsprintfA(p->m_szAutoName, "ATL:%8.8X", (DWORD)&p->m_wc);',
+    'int n = ::snprintf(p->m_szAutoName, sizeof(p->m_szAutoName), '
+    '"ATL:%016llX", (unsigned long long)(ULONG_PTR)&p->m_wc);\\n'
+    '\\t\\t\\t\\tif (n < 0 || n >= (int)sizeof(p->m_szAutoName)) '
+    '{ ::LeaveCriticalSection(&pM->m_csWindowCreate); return 0; }')
+s = change(s,
+    'wsprintfW(p->m_szAutoName, L"ATL:%8.8X", (DWORD)&p->m_wc);',
+    'int n = ::swprintf(p->m_szAutoName, '
+    'sizeof(p->m_szAutoName)/sizeof(p->m_szAutoName[0]), '
+    'L"ATL:%016llX", (unsigned long long)(ULONG_PTR)&p->m_wc);\\n'
+    '\\t\\t\\t\\tif (n < 0 || n >= '
+    '(int)(sizeof(p->m_szAutoName)/sizeof(p->m_szAutoName[0]))) '
+    '{ ::LeaveCriticalSection(&pM->m_csWindowCreate); return 0; }')
+s = change(s,
+    '#ifndef __ATLBASE_H__\\n\\t#error atlwin.h requires atlbase.h to be included first\\n#endif',
+    '#ifndef __ATLBASE_H__\\n\\t#error atlwin.h requires atlbase.h to be included first\\n#endif'
+    '\\n#include <stdio.h>\\n#include <wchar.h>')
 # _AtlCreateWndData is used by Winx to transfer ownership into the
 # first native window message. Once consumed, the same union slot may be
 # used by the code thunk. The RX allocation itself is a separate owner.
