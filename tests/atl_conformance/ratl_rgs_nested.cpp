@@ -87,6 +87,11 @@ static const wchar_t * const kForce =
     L" {\n  val New = s 'fresh'\n }\n}\n";
 static const wchar_t * const kDelete =
     L"HKCR\n{\n Delete RATL_P1D_DELETE\n}\n";
+static const wchar_t * const kDeniedForce =
+    L"HKCR\n{\n ForceRemove RATL_P1D_DENIED\n"
+    L" {\n  val New = s 'should-not-write'\n }\n}\n";
+static const wchar_t * const kDeniedDelete =
+    L"HKCR\n{\n Delete RATL_P1D_DENIED\n}\n";
 static const wchar_t * const kNoRemove =
     L"HKCR\n{\n NoRemove RATL_P1D_KEEP\n"
     L" {\n  val Marker = s 'retained'\n }\n}\n";
@@ -210,6 +215,20 @@ static int execute(const char* mode) {
         ok=hr==S_OK && stale==expectBug &&
             exists(scratch.key,L"RATL_P1D_DELETE")==expectBug;
         tag=mode;
+    } else if(::strcmp(mode,"denied-force")==0 ||
+              ::strcmp(mode,"denied-delete")==0) {
+        if(!seed(scratch.key,L"RATL_P1D_DENIED\\Old\\Deep"))
+            return fail(16,"seed_access_denied");
+        const wchar_t* script=(::strcmp(mode,"denied-force")==0)
+            ? kDeniedForce : kDeniedDelete;
+        hr=reg.StringRegister(script);
+        // Injected ERROR_ACCESS_DENIED must *not* be discarded by
+        // ForceRemove/Delete, nor clobber a previously existing subtree.
+        ok=hr==HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED) &&
+            exists(scratch.key,L"RATL_P1D_DENIED\\Old\\Deep") &&
+            !str(scratch.key,L"RATL_P1D_DENIED",L"New",REG_SZ,
+                 L"should-not-write");
+        tag=mode;
     } else return fail(13,"unknown_mode");
     // Never confuse a test failure with successful cleanup or vice versa.
     const bool cleaned=scratch.cleanup();
@@ -219,7 +238,8 @@ static int execute(const char* mode) {
         // Explicit evidence of the originally observed HRESULT and
         // whether the nested descendants survived. A baseline that
         // starts behaving differently must fail, not be called repaired.
-        const int stale=(::strncmp(mode,"baseline-",9)==0)?1:0;
+        const int stale=(::strncmp(mode,"baseline-",9)==0 ||
+                         ::strncmp(mode,"denied-",7)==0)?1:0;
         std::printf("RATL_P1D_OK mode=%s hr=0x%08lx stale=%d\n",
                     mode,static_cast<unsigned long>(hr),stale);
     } else {
