@@ -14,7 +14,7 @@ diff --git a/bogus/BogusControlFlow.cpp b/bogus/BogusControlFlow.cpp
    FCmpInst *condition =
 -      new FCmpInst(basicBlock, FCmpInst::FCMP_TRUE, LHS, RHS, *var4);
 +      new FCmpInst(*basicBlock, FCmpInst::FCMP_TRUE, LHS, RHS, *var4);
-   DEBUG_WITH_TYPE("gen", errs() << "bcf: Always true condition created\\n");
+   DEBUG_WITH_TYPE("gen", errs() << "bcf: Always true condition created\n");
  
 @@ -344,5 +344,5 @@
    // We add at the end a new always true condition
