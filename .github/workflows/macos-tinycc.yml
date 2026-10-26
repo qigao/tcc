@@ -7,7 +7,7 @@ permissions:
 jobs:
   native-macos:
     runs-on: ${{ matrix.runner }}
-    continue-on-error: true
+    # Proven native Mach-O execution on Intel and Apple Silicon: required.
     timeout-minutes: 25
     strategy:
       fail-fast: false
