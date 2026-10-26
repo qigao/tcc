@@ -27,8 +27,10 @@ is **opt-in diagnostic**, never a substitute for physical device execution.
 
 ## Required acceptance
 
-- ADB reports `arm64-v8a` and `uname -m=aarch64`; reject
-  `emulator-*` serials, `ro.kernel.qemu=1` and ABI mismatches.
+- ADB reports `arm64-v8a`, `uname -m=aarch64`, and
+  Android API level **35 or newer**. Reject `emulator-*` serials,
+  `ro.kernel.qemu=1`, `ro.hardware=ranchu/goldfish` and ABI mismatches.
+  Require three successive ELF/NDK and targetSdk35 JNI test iterations.
 - Native Android ARM64/Bionic `tcc` executes, compiles a C source
   into an ELF64 AArch64 ET_REL object on-device; NDK Clang links it
   into a native Bionic executable, which is executed on the device.
