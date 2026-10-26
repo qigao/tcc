@@ -9,7 +9,6 @@ jobs:
     name: Linux macOS cross-build WTL10 on ${{ matrix.host }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -30,8 +29,7 @@ jobs:
           HOST_LLVM_URL: https://github.com/mstorsjo/llvm-mingw/releases/download/20261020/${{ matrix.archive }}
           HOST_LLVM_SHA256: ${{ matrix.sha256 }}
         run: bash scripts/wtl10-cross-host.sh
-      - name: Full WTL10 sample executable including resource compilation (diagnostic)
-        continue-on-error: true
+      - name: Full WTL10 sample executable including resource compilation (required)
         shell: bash
         run: bash scripts/wtl10-full-app-link.sh
       - uses: actions/upload-artifact@v4

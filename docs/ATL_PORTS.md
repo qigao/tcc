@@ -91,11 +91,15 @@ OpenATL's writable/executable `CWndProcThunk`.
 
 ## Selection and local reproduction
 
-For a new Windows x64/ARM64 C++ integration prototype, use OpenATL
-behind a fixed-width C ABI. WTL4MinGW is a separate legacy x86
-compatibility check, **not** a replacement for OpenATL or an excuse to
-link the two ATL implementations together. Keep the older RATL test
-until consumer behavior is compared deliberately.
+For new Windows x64/ARM64 WTL application development,
+**prefer official WTL10 + OpenATL + llvm-mingw**; use its independently
+pinned runtime and full resource-based SDI compilation gates in
+[WTL10_OPENATL.md](WTL10_OPENATL.md). WTL4MinGW is an older WTL8/Winx
+compatibility/reference layer; its separate experimental x64/ARM64
+port demonstrates limited window and controls behavior but should
+not be mistaken for official WTL10. Keep the older RATL reference
+until its consumers are compared deliberately. Never combine these
+three conflicting ATL header trees in a translation unit.
 
 On a Windows runner with pinned llvm-mingw and TinyCC installed:
 

@@ -193,3 +193,22 @@ notices require a separate redistribution/license audit despite its
 root MIT license. Implementation and reproducible test commands:
 [ATL_PORTS.md](docs/ATL_PORTS.md), tracked by
 [Issue #4](https://github.com/qigao/tcc/issues/4).
+
+## Preferred WTL application build: WTL10 + OpenATL
+
+A separate pinned Windows GUI track now combines **official WTL
+10.0.10320 headers** (Microsoft Public License) with the
+**clean-room OpenATL** C++17 subset under llvm-mingw. The full WTL10
+ZIP is integrity-checked and downloaded only by CI.
+
+The required native Windows x64 and ARM64 jobs run a real
+OpenATL/WTL10 C++ DLL from TinyCC C clients (five repetitions each),
+while required Linux/macOS host jobs cross-build x64/ARM64 Windows
+PE outputs and compile/link the author's full resource-based
+`wtltest` SDI GUI application. These are real Windows-target
+cross-compilations, **not** native GUI executions on Linux/macOS.
+
+The older WTL4MinGW (WTL8) port remains a separately isolated
+compatibility test with known license/security constraints.
+See [WTL10_OPENATL.md](docs/WTL10_OPENATL.md) and
+[Issue #4](https://github.com/qigao/tcc/issues/4).
