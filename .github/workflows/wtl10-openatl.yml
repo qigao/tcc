@@ -140,7 +140,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           ./scripts/windows-atl-com-p1c.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
           if ($LASTEXITCODE -ne 0) { throw 'OpenATL P1-C real registry sandbox test failed' }
-      - name: Independent RATL COM P1 reference x64 native (required)
+      - name: Independent RATL COM P1 and statreg RGS x64 native (required)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'

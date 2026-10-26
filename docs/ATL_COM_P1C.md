@@ -52,3 +52,19 @@ and exact expected stdout. This validates a controlled process-abort
 scenario, **not** power-loss durability, arbitrary crash recovery,
 production DllRegisterServer or external service activation. No HKCR/HKLM
 persistent writes are authorized.
+
+### Independent RATL statreg registry-script reference
+
+tests/atl_conformance/ratl_registry_reference.cpp compiles as a separate
+Windows x64 executable against exact-pinned, unchanged RATL. A constant
+RGS script uses only HKCR root plus REG_SZ/REG_DWORD; it executes through
+RATL CRegObject, after verifying process-local HKCR redirection to a newly
+created disposable HKCU root. Five x64 native runs require RGS register,
+value inspection, unregister disappearance, invalid-script failure/rollback,
+and full scratch cleanup. Linux/macOS also cross-compile that exact code.
+
+RATL accepts other roots such as HKLM, so arbitrary scripts must never
+be executed inside this constrained reference. RATL remains x64-only:
+its ARM64 PSEH3 is not qualified. No RATL headers, source, object layout,
+or ownership are mixed with OpenATL. This comparison does not authorize
+real COM product installation or arbitrary RGS features.

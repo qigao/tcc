@@ -39,3 +39,28 @@ for ($i=1; $i -le 5; ++$i) {
   }
 }
 Write-Host 'Independent RATL COM P1 x64 factory/lifecycle/temporary class-object 5/5 PASS; ARM64 NOT qualified'
+
+# Separate RATL-ONLY statreg.h RGS test (x64; never uses OpenATL objects).
+$regSource=(Resolve-Path 'tests/atl_conformance/ratl_registry_reference.cpp').Path
+$regExe="$OutDir/atl_ratl_registry_ref_x64.exe"
+& $cxx @('-std=c++17','-O0','-DNDEBUG','-DUNICODE','-D_UNICODE',
+    '-D_ATL_APARTMENT_THREADED','-D_WIN32_WINNT=0x0601',
+    '-D__RATL__','-DINITGUID','-D_USE_PSEH3',
+    '-D_CRT_NON_CONFORMING_SWPRINTFS',"-I$ratl","-I$compat",
+    $regSource,'-o',$regExe,'-static','-lole32','-loleaut32',
+    '-luuid','-lrpcrt4','-lshlwapi','-ladvapi32',
+    '-lgdi32','-luser32','-lkernel32')
+if ($LASTEXITCODE -ne 0) { throw 'RATL statreg RGS reference x64 compile failed' }
+python tests/wtl10/verify_pe_machine.py $regExe x86_64
+if ($LASTEXITCODE -ne 0) { throw 'RATL RGS reference machine mismatch' }
+$regNative=(Resolve-Path $regExe).Path
+$expectedReg='RATL_REG_REF_OK rgs=1 string=1 dword=1 unregister=1 invalid=1 clean=1'
+for ($i=1; $i -le 5; ++$i) {
+  $lines=@(& $regNative 2>&1)
+  $resultCode=$LASTEXITCODE
+  $resultText=($lines | ForEach-Object { "$_".Trim() }) -join ''
+  if ($resultCode -ne 0 -or $resultText -cne $expectedReg) {
+    throw "RATL RGS native x64 failed run $i exit=$($resultCode): $resultText"
+  }
+}
+Write-Host 'Independent RATL statreg RGS registry sandbox x64 native 5/5 PASS; ARM64 NOT qualified'
