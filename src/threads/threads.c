@@ -86,7 +86,13 @@ int poc_mutex_destroy(poc_mutex *m) {
 int poc_condition_init(poc_condition *c) {
     if (!c || c->active) return -1;
 #ifdef _WIN32
-    InitializeConditionVariable(&c->native);
+    /* Use the documented pointer-sized Windows condition variable layout.
+     * Resolve system APIs dynamically to support TinyCC SDKs that omit the
+     * CONDITION_VARIABLE typedef and these newer import declarations. */
+    c->native = NULL;
+    if (!GetProcAddress(GetModuleHandleA("kernel32.dll"), "SleepConditionVariableCS") ||
+        !GetProcAddress(GetModuleHandleA("kernel32.dll"), "WakeConditionVariable") ||
+        !GetProcAddress(GetModuleHandleA("kernel32.dll"), "WakeAllConditionVariable")) return -1;
 #else
     if (pthread_cond_init(&c->native, NULL) != 0) return -1;
 #endif
@@ -96,7 +102,10 @@ int poc_condition_init(poc_condition *c) {
 int poc_condition_wait(poc_condition *c, poc_mutex *m) {
     if (!c || !c->active || !m || !m->active) return -1;
 #ifdef _WIN32
-    return SleepConditionVariableCS(&c->native, &m->native, INFINITE) ? 0 : -1;
+    typedef BOOL (WINAPI *sleep_fn)(void *, CRITICAL_SECTION *, DWORD);
+    HMODULE kernel = GetModuleHandleA("kernel32.dll");
+    sleep_fn fn = kernel ? (sleep_fn)GetProcAddress(kernel, "SleepConditionVariableCS") : NULL;
+    return fn && fn(&c->native, &m->native, INFINITE) ? 0 : -1;
 #else
     return pthread_cond_wait(&c->native, &m->native) == 0 ? 0 : -1;
 #endif
@@ -104,7 +113,11 @@ int poc_condition_wait(poc_condition *c, poc_mutex *m) {
 int poc_condition_signal(poc_condition *c) {
     if (!c || !c->active) return -1;
 #ifdef _WIN32
-    WakeConditionVariable(&c->native);
+    typedef void (WINAPI *wake_fn)(void *);
+    HMODULE kernel = GetModuleHandleA("kernel32.dll");
+    wake_fn fn = kernel ? (wake_fn)GetProcAddress(kernel, "WakeConditionVariable") : NULL;
+    if (!fn) return -1;
+    fn(&c->native);
     return 0;
 #else
     return pthread_cond_signal(&c->native) == 0 ? 0 : -1;
@@ -113,7 +126,11 @@ int poc_condition_signal(poc_condition *c) {
 int poc_condition_broadcast(poc_condition *c) {
     if (!c || !c->active) return -1;
 #ifdef _WIN32
-    WakeAllConditionVariable(&c->native);
+    typedef void (WINAPI *wake_fn)(void *);
+    HMODULE kernel = GetModuleHandleA("kernel32.dll");
+    wake_fn fn = kernel ? (wake_fn)GetProcAddress(kernel, "WakeAllConditionVariable") : NULL;
+    if (!fn) return -1;
+    fn(&c->native);
     return 0;
 #else
     return pthread_cond_broadcast(&c->native) == 0 ? 0 : -1;

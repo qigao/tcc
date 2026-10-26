@@ -38,7 +38,7 @@ typedef struct poc_mutex {
 
 typedef struct poc_condition {
 #ifdef _WIN32
-    CONDITION_VARIABLE native;
+    void *native; /* Win32 CONDITION_VARIABLE is one pointer-sized slot. */
 #else
     pthread_cond_t native;
 #endif
