@@ -37,6 +37,10 @@ jobs:
           cd tools/tinycc-android
           ./configure --cpu="${{ matrix.cpu }}" --targetos=Android \
             --cc="$CC" --ar="$AR" --prefix=/data/local/tmp/tcc
+          # c2str.exe generates a C header DURING THE BUILD, and must run on
+          # the Linux HOST rather than be built as an Android target ELF.
+          /usr/bin/cc -DC2STR conftest.c -o c2str.exe
+          test -x ./c2str.exe
           make -j2 tcc
           cp tcc "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/tcc"
           "$CC" -O2 -std=c11 -pthread \
