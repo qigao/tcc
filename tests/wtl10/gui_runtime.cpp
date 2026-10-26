@@ -84,17 +84,28 @@ public:
     int messages = 0;
     int destroyed = 0;
     int finalized = 0;
+    int reentrant = 0;
+    int nested_contract_broken = 0;
 
     DECLARE_WND_CLASS(L"WTL10OpenATLNativeRuntimeProbe")
 
     BEGIN_MSG_MAP(ProbeWindow)
         MESSAGE_HANDLER(WM_APP + 31, OnProbe)
+        MESSAGE_HANDLER(WM_APP + 33, OnReentrantDestroy)
         MESSAGE_HANDLER(WM_NCDESTROY, OnNcDestroy)
     END_MSG_MAP()
 
     LRESULT OnProbe(UINT, WPARAM w, LPARAM l, BOOL&) {
         ++messages;
         return (LRESULT)(w + l + 100);
+    }
+
+    LRESULT OnReentrantDestroy(UINT, WPARAM, LPARAM, BOOL&) {
+        ++reentrant;
+        if (finalized != 0 || m_hWnd == NULL || !::DestroyWindow(m_hWnd) ||
+            finalized != 0)
+            nested_contract_broken = 1;
+        return 0;
     }
 
     LRESULT OnNcDestroy(UINT, WPARAM, LPARAM, BOOL& handled) {
@@ -115,10 +126,13 @@ public:
     int messages = 0;
     int destroyed = 0;
     int finalized = 0;
+    int reentrant = 0;
+    int nested_contract_broken = 0;
 
     BEGIN_MSG_MAP(ProbeDialog)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInit)
         MESSAGE_HANDLER(WM_APP + 32, OnProbe)
+        MESSAGE_HANDLER(WM_APP + 34, OnReentrantDestroy)
         MESSAGE_HANDLER(WM_NCDESTROY, OnNcDestroy)
     END_MSG_MAP()
 
@@ -129,6 +143,15 @@ public:
 
     LRESULT OnProbe(UINT, WPARAM, LPARAM, BOOL&) {
         ++messages;
+        return 0;
+    }
+
+    LRESULT OnReentrantDestroy(UINT, WPARAM, LPARAM, BOOL&) {
+        ++reentrant;
+        if (finalized != 0 || m_hWnd == NULL || !::DestroyWindow(m_hWnd) ||
+            finalized != 0)
+            nested_contract_broken = 1;
+        // A handled outer message must still retire nested WM_NCDESTROY.
         return 0;
     }
 
@@ -161,6 +184,19 @@ static bool check_window()
         if (wnd.destroyed != 1 || wnd.finalized != 1 || wnd.m_hWnd != NULL)
             return false;
     }
+    // Nested WM_NCDESTROY defers finalization until the outer dispatch unwinds.
+    for (int i = 0; i < 12; ++i) {
+        ProbeWindow wnd;
+        RECT bounds = {0, 0, 128, 56};
+        HWND h = wnd.Create(NULL, bounds, L"WTL10 nested destroy", WS_POPUP, 0);
+        if (!h || !executable_read_only(wnd.m_thunk.GetCodeAddress()))
+            return false;
+        ::SendMessageW(h, WM_APP + 33, 0, 0);
+        if (::IsWindow(h) || wnd.reentrant != 1 ||
+            wnd.nested_contract_broken != 0 || wnd.destroyed != 1 ||
+            wnd.finalized != 1 || wnd.m_hWnd != NULL)
+            return false;
+    }
     return true;
 }
 
@@ -187,6 +223,23 @@ static bool check_dialog()
             return false;
         if (dlg.destroyed != 1 || dlg.finalized != 1 || dlg.m_hWnd != NULL)
             return false;
+    }
+    for (int i = 0; i < 6; ++i) {
+        ProbeDialog dlg;
+        HWND h = dlg.Create(NULL);
+        if (!h || dlg.initialized != 1 ||
+            !executable_read_only(dlg.m_thunk.GetCodeAddress()))
+            return false;
+        ::SendMessageW(h, WM_APP + 34, 0, 0);
+        if (::IsWindow(h) || dlg.reentrant != 1 ||
+            dlg.nested_contract_broken != 0 || dlg.destroyed != 1 ||
+            dlg.finalized != 1 || dlg.m_hWnd != NULL) {
+            fprintf(stderr,
+                "Nested dialog cleanup failed: nc=%d final=%d hwnd=%p bad=%d\n",
+                dlg.destroyed, dlg.finalized, (void*)dlg.m_hWnd,
+                dlg.nested_contract_broken);
+            return false;
+        }
     }
     return true;
 }
