@@ -185,3 +185,91 @@ jobs:
             }
           } finally { Pop-Location }
           Write-Host 'Native Windows ARM64 WTL10/OpenATL/TinyCC C ABI 5/5 PASS'
+
+
+  wtl10-nonwindows-cross:
+    name: WTL10 on ${{ matrix.host }} llvm-mingw cross compiler
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: Linux
+            runner: ubuntu-24.04
+            archive: llvm-mingw-20261020-ucrt-ubuntu-22.04-x86_64.tar.xz
+            sha256: 55064b60b991a1e1e8090b8c2f84e82b22cfe5903d12c159d65064cf5e8ae335
+          - host: macOS
+            runner: macos-15
+            archive: llvm-mingw-20261020-ucrt-macos-universal.tar.xz
+            sha256: e9c13e4ede38e715003ffc674d4d00a1088df8235439d1f0c16188ff0704c17e
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch SHA256 pinned host llvm-mingw and immutable WTL10/OpenATL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tools/llvm-host tools/wtl10 build-wtl10
+          curl -fL --retry 3 --retry-delay 3 -o llvm-mingw.tar.xz \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/20261020/${{ matrix.archive }}"
+          echo '${{ matrix.sha256 }}  llvm-mingw.tar.xz' | shasum -a 256 -c -
+          tar -xJf llvm-mingw.tar.xz -C tools/llvm-host
+          BIN="$(find "$PWD/tools/llvm-host" -type f -name x86_64-w64-mingw32-clang++ -print -quit)"
+          test -n "$BIN" && test -x "$BIN"
+          echo "MINGW_BIN=$(dirname "$BIN")" >> "$GITHUB_ENV"
+          curl -fL --retry 3 -o build-wtl10/wtl10.zip \
+            'https://raw.githubusercontent.com/Win32-WTL/WTL/065ef5597383c1231bd4892cf8e94331b29bdb97/Releases/WTL10_10320_Final.zip'
+          test "$(git hash-object build-wtl10/wtl10.zip)" = 'a9f9d84495aac2155b0fdb00fec0e421b0e75c90'
+          echo '13de5cd7ed41454b8f287e9bcc4525234c6ac8c85905e4d4fe1a0776709fd78f  build-wtl10/wtl10.zip' | shasum -a 256 -c -
+          unzip -q build-wtl10/wtl10.zip -d tools/wtl10
+          git clone --quiet https://github.com/kkhaike/openatl.git tools/wtl10-openatl
+          git -C tools/wtl10-openatl checkout --quiet --detach 7b587f3e10f3f8d93a01522033de80007368bad5
+          test "$(git -C tools/wtl10-openatl rev-parse HEAD)" = '7b587f3e10f3f8d93a01522033de80007368bad5'
+          git clone --quiet https://github.com/kkhaike/wtltest.git tools/wtl10-test
+          git -C tools/wtl10-test checkout --quiet --detach 63ba6a992cb3d79d56be66cd283f6615c6646b3d
+          test "$(git -C tools/wtl10-test rev-parse HEAD)" = '63ba6a992cb3d79d56be66cd283f6615c6646b3d'
+          HEADER="$(find "$PWD/tools/wtl10" -type f -iname atlapp.h -print -quit)"
+          test -f "$HEADER"
+          grep -qi 'WTL version 10.0' "$HEADER"
+          echo "WTL10_INC=$(dirname "$HEADER")" >> "$GITHUB_ENV"
+      - name: Cross-compile actual WTL10 + OpenATL for x64 and ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          ATL="$PWD/tools/wtl10-openatl/include"
+          TEST="$PWD/tools/wtl10-test"
+          for arch in x86_64 aarch64; do
+            CC="$MINGW_BIN/${arch}-w64-mingw32-clang++"
+            test -x "$CC"
+            flags=(-std=c++17 -O0 -DUNICODE -D_UNICODE
+              -D_WIN32_WINNT=0x0601 -DWINVER=0x0601 -D_WIN32_IE=0x0601
+              "-I$ATL" "-I$WTL10_INC" "-I$TEST")
+            "$CC" "${flags[@]}" -fsyntax-only \
+              tests/wtl10/openatl_wtl10_bridge.cpp \
+              "$TEST/main.cpp"
+            output="build-wtl10/poc_openatl_wtl10_${arch}.dll"
+            "$CC" "${flags[@]}" -shared \
+              tests/wtl10/openatl_wtl10_bridge.cpp -o "$output" \
+              -static -loleaut32 -lole32 -luuid -lcomctl32 \
+              -lgdi32 -luser32 -lshell32 -lshlwapi \
+              -lcomdlg32 -luxtheme -lmsimg32
+            python3 - "$output" "$arch" <<'PY'
+          import pathlib, struct, sys
+          b = pathlib.Path(sys.argv[1]).read_bytes()
+          assert b[:2] == b'MZ' and len(b) > 128, 'Not a valid PE'
+          off = struct.unpack_from('<I', b, 0x3c)[0]
+          assert b[off:off+4] == b'PE\x00\x00', 'PE magic missing'
+          machine = struct.unpack_from('<H', b, off+4)[0]
+          expected = {'x86_64': 0x8664, 'aarch64': 0xaa64}[sys.argv[2]]
+          assert machine == expected, (hex(machine), hex(expected))
+          print(f'Windows PE target {sys.argv[2]} verified: {sys.argv[1]}')
+          PY
+          done
+          echo 'Non-Windows host WTL10/OpenATL cross-compile x64+ARM64 PASS'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wtl10-host-${{ matrix.host }}-evidence
+          path: build-wtl10/*.dll
+          if-no-files-found: warn
