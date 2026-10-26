@@ -110,7 +110,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           ./scripts/windows-wtl10-gui.ps1 -LLVMRoot $env:LLVM_MINGW_BIN
           if ($LASTEXITCODE -ne 0) { throw 'WTL10 native GUI smoke build/runtime failed' }
-      - name: ATL COM P0 OpenATL/RATL isolated x64 native + ARM64 cross-build (required)
+      - name: ATL COM P0 OpenATL/RATL x64 native + OpenATL ARM64 cross-build (required)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -126,7 +126,6 @@ jobs:
             build-wtl10/wtl10_client_arm64.exe
             build-wtl10/wtl10_gui_runtime_aarch64.exe
             build-wtl10/atl_com_openatl_arm64.exe
-            build-wtl10/atl_com_ratl_arm64.exe
             build-wtl10/manifest.json
           if-no-files-found: error
 
@@ -147,7 +146,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ne 'Arm64') { throw 'Native Windows ARM64 runner required' }
           $manifest = Get-Content wtl10-arm64/manifest.json -Raw | ConvertFrom-Json -AsHashtable
-          foreach ($filename in @('poc_openatl_wtl10_arm64.dll','wtl10_client_arm64.exe','wtl10_gui_runtime_aarch64.exe','atl_com_openatl_arm64.exe','atl_com_ratl_arm64.exe')) {
+          foreach ($filename in @('poc_openatl_wtl10_arm64.dll','wtl10_client_arm64.exe','wtl10_gui_runtime_aarch64.exe','atl_com_openatl_arm64.exe')) {
             $path = (Resolve-Path "wtl10-arm64/$filename").Path
             [byte[]]$raw = [IO.File]::ReadAllBytes($path)
             if ($raw.Length -lt 128) { throw "Tiny PE: $filename" }
@@ -172,16 +171,11 @@ jobs:
           for ($i = 1; $i -le 5; $i++) {
             $oa = @(& ./wtl10-arm64/atl_com_openatl_arm64.exe 2>&1)
             $oaRC = $LASTEXITCODE
-            $ra = @(& ./wtl10-arm64/atl_com_ratl_arm64.exe 2>&1)
-            $raRC = $LASTEXITCODE
             $oaText = ($oa | ForEach-Object { "$_".Trim() }) -join ''
-            $raText = ($ra | ForEach-Object { "$_".Trim() }) -join ''
-            if ($oaRC -ne 0 -or $raRC -ne 0 -or
-                $oaText -cne $expectedCOM -or $raText -cne $expectedCOM -or
-                $oaText -cne $raText) {
-              throw "ARM64 ATL COM P0 mismatch run $i : OpenATL=($oaRC) $oaText RATL=($raRC) $raText"
+            if ($oaRC -ne 0 -or $oaText -cne $expectedCOM) {
+              throw "Native ARM64 OpenATL COM P0 failed run $i exit $oaRC : $oaText"
             }
           }
-          Write-Host 'ATL COM P0 OpenATL/RATL isolated native ARM64 5/5 PASS'
+          Write-Host 'Native ARM64 OpenATL COM P0 contract 5/5 PASS; RATL ARM64 PSEH3 remains unqualified'
           Write-Host 'Native ARM64 WTL10 hidden-window/dialog and RX thunk runtime 5/5 PASS'
           Write-Host 'Native Windows ARM64 WTL10/OpenATL/TinyCC C ABI 5/5 PASS'

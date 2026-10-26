@@ -18,9 +18,15 @@ Tracked in [Issue #6](https://github.com/qigao/tcc/issues/6).
   its QI to ATL COM maps. It intentionally does **not** qualify
   `CComObject`, Class Factory, aggregation, registration, typelib,
   `IDispatch` or real cross-apartment marshalling. Those are P1/P2.
-- Both compile into Windows x64/ARM64 PE via SHA-pinned llvm-mingw. Required
-  native Windows x64 and ARM64 CI must run each five times and compare a
-  deterministic exact result with the expected contract; SHA256 and ARM64
-  PE machine must match. Build-only success is insufficient.
+- Both implementations compile as **separate Windows x64 PE** and run
+  on native Windows x64 five times, with identical deterministic results
+  checked against explicit COM contracts.
+- **Windows ARM64** qualifies **OpenATL only** (PE machine + SHA256,
+  five native executions). RATL ARM64 is **NOT QUALIFIED**: its pinned
+  PSEH3 header uses x86-only `regparm`, `%esp` and register/asm constructs;
+  ARM64 compilation fails. No dummy-SEH bypass, no fake ARM64 parity.
+- Genuine Linux/macOS hosts cross-compile RATL+OpenATL x64 and OpenATL
+  ARM64, while native Windows hosts execute the tests. Windows-only
+  behavior must never be inferred from cross-compilation alone.
 
 No WTL8 fallback. No production Salts/compiler switch. PR #1 Draft.

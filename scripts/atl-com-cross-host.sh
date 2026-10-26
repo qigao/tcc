@@ -27,13 +27,15 @@ for cpu in x86_64 aarch64; do
     -static -lole32 -loleaut32 -luuid -lrpcrt4 -lshlwapi \
     -ladvapi32 -lgdi32 -luser32 -lkernel32
   python3 tests/wtl10/verify_pe_machine.py "$OPENEXE" "$cpu"
-  "$CXX" -std=c++17 -O0 -DNDEBUG -DUNICODE -D_UNICODE \
-    -D_ATL_APARTMENT_THREADED -D_WIN32_WINNT=0x0601 \
-    -DATL_CONFORMANCE_RATL=1 -D__RATL__ -DINITGUID -D_USE_PSEH3 \
-    -D_CRT_NON_CONFORMING_SWPRINTFS "-I$RATL/include/atl" "-I$RATL/compat" \
-    tests/atl_conformance/com_p0.cpp -o "$RATLEXE" \
-    -static -lole32 -loleaut32 -luuid -lrpcrt4 -lshlwapi \
-    -ladvapi32 -lgdi32 -luser32 -lkernel32
-  python3 tests/wtl10/verify_pe_machine.py "$RATLEXE" "$cpu"
+  if [ "$cpu" = x86_64 ]; then
+    "$CXX" -std=c++17 -O0 -DNDEBUG -DUNICODE -D_UNICODE \
+      -D_ATL_APARTMENT_THREADED -D_WIN32_WINNT=0x0601 \
+      -DATL_CONFORMANCE_RATL=1 -D__RATL__ -DINITGUID -D_USE_PSEH3 \
+      -D_CRT_NON_CONFORMING_SWPRINTFS "-I$RATL/include/atl" "-I$RATL/compat" \
+      tests/atl_conformance/com_p0.cpp -o "$RATLEXE" \
+      -static -lole32 -loleaut32 -luuid -lrpcrt4 -lshlwapi \
+      -ladvapi32 -lgdi32 -luser32 -lkernel32
+    python3 tests/wtl10/verify_pe_machine.py "$RATLEXE" "$cpu"
+  fi
 done
-echo "ATL COM P0 separate OpenATL and RATL PE cross-build x64+ARM64 PASS (no Windows runtime)"
+echo "ATL COM P0 separate OpenATL/RATL x64 and OpenATL ARM64 PE cross-build PASS (RATL ARM64 not qualified)"

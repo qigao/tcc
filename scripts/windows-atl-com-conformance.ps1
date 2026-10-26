@@ -40,7 +40,10 @@ foreach ($cpu in @('x86_64','aarch64')) {
   if (!(Test-Path $compiler)) { throw "Missing llvm-mingw C++ driver: $cpu" }
   $suffix = if ($cpu -eq 'x86_64') { 'x64' } else { 'arm64' }
 
-  foreach ($provider in @('openatl','ratl')) {
+  # The pinned RATL PSEH3 compiler/inline-asm backend is x86-specific.
+  # Do not fake ARM64 exception semantics with _USE_DUMMY_PSEH.
+  $providers = if ($cpu -eq 'x86_64') { @('openatl','ratl') } else { @('openatl') }
+  foreach ($provider in $providers) {
     $exe = "$OutDir/atl_com_$($provider)_$suffix.exe"
     $flags = @('-std=c++17', '-O0', '-DNDEBUG', '-DUNICODE', '-D_UNICODE',
       '-D_ATL_APARTMENT_THREADED', '-D_WIN32_WINNT=0x0601')
@@ -64,7 +67,7 @@ foreach ($cpu in @('x86_64','aarch64')) {
 $manifestPath = Join-Path $OutDir 'manifest.json'
 if (!(Test-Path $manifestPath)) { throw 'WTL10 SHA256 provenance manifest missing' }
 $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json -AsHashtable
-foreach ($provider in @('openatl','ratl')) {
+foreach ($provider in @('openatl')) {
   $file = "atl_com_$($provider)_arm64.exe"
   $manifest[$file] = (Get-FileHash (Join-Path $OutDir $file) -Algorithm SHA256).Hash.ToLowerInvariant()
 }
@@ -84,4 +87,4 @@ for ($i = 1; $i -le 5; $i++) {
   }
   if ($observations[0] -cne $observations[1]) { throw "OpenATL/RATL P0 result differs, run $i" }
 }
-Write-Host "ATL COM P0: OpenATL vs isolated RATL native Windows x64 5/5 PASS"
+Write-Host "ATL COM P0: OpenATL vs isolated RATL native Windows x64 5/5 PASS (RATL ARM64 PSEH3 NOT qualified)"

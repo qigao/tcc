@@ -35,7 +35,7 @@ jobs:
       - name: Cross-build actual CWindowImpl and resource-dialog native runtime (required)
         shell: bash
         run: bash scripts/wtl10-gui-cross-host.sh
-      - name: ATL COM P0 separate OpenATL/RATL x64+ARM64 PE cross-build (required)
+      - name: ATL COM P0 OpenATL/RATL x64 and OpenATL ARM64 PE cross-build (required)
         shell: bash
         run: bash scripts/atl-com-cross-host.sh
       - uses: actions/upload-artifact@v4
