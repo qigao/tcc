@@ -10,6 +10,8 @@
 #include <ocidl.h>
 #include <cstdio>
 #include <cwchar>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <atlbase.h>
 #include <atlcom.h>
@@ -145,7 +147,150 @@ static DWORD WINAPI foreignRegistration(void* out) {
     *static_cast<HRESULT*>(out)=module.RegisterServer();
     return 0;
 }
-int main() {
+// The only cross-process authority is a newly created GUID-scoped HKCU
+// root, with a matching marker derived from its GUID. Only parent-created
+// child processes receive its path/proof through inherited environment.
+static bool recoveryRequest(std::wstring& path,DWORD& proof) {
+    wchar_t raw[104]={},hex[24]={};
+    DWORD p=::GetEnvironmentVariableW(L"ATL_P1C_RECOVERY_KEY",raw,104);
+    DWORD q=::GetEnvironmentVariableW(L"ATL_P1C_RECOVERY_PROOF",hex,24);
+    if(!p || p>=104 || !q || q>=24)return false;
+    const std::wstring prefix=L"qigao_tcc_ATL_P1C_";
+    const std::wstring key(raw);
+    if(key.length()!=prefix.size()+38 || key.compare(0,prefix.size(),prefix)!=0)
+        return false;
+    GUID id={};
+    if(FAILED(::CLSIDFromString(raw+prefix.size(),&id)))return false;
+    wchar_t canonical[40]={};
+    if(!::StringFromGUID2(id,canonical,40))return false;
+    if(key.substr(prefix.size())!=canonical)return false;
+    wchar_t* end=nullptr;
+    unsigned long parsed=std::wcstoul(hex,&end,16);
+    if(end==hex || *end!=0 || parsed==0 || parsed>0xFFFFFFFFul)
+        return false;
+    if(static_cast<DWORD>(parsed)!=(id.Data1^0xA1339C47u==0?
+         0x13777BC5u : id.Data1^0xA1339C47u))
+        return false;
+    path=key;
+    proof=static_cast<DWORD>(parsed);
+    return true;
+}
+static bool proofFor(HKEY key,DWORD expected) {
+    DWORD actual=0,type=0,bytes=sizeof(actual);
+    const LSTATUS hr=::RegQueryValueExW(key,L"P1C_REDIRECT_PROOF",
+          nullptr,&type,reinterpret_cast<BYTE*>(&actual),&bytes);
+    return hr==ERROR_SUCCESS && type==REG_DWORD &&
+           bytes==sizeof(actual) && actual==expected;
+}
+static int recoveryChild(const char* mode) {
+    std::wstring path;
+    DWORD proof=0;
+    if(!recoveryRequest(path,proof))return failed(60,"bad_recovery_authority");
+    HKEY key=nullptr;
+    if(::RegOpenKeyExW(HKEY_CURRENT_USER,path.c_str(),0,KEY_ALL_ACCESS,
+       &key)!=ERROR_SUCCESS)return failed(61,"recovery_scratch_missing");
+    if(!proofFor(key,proof)) {
+        ::RegCloseKey(key);
+        return failed(62,"recovery_marker_incorrect");
+    }
+    if(std::strcmp(mode,"--abandon")==0) {
+        if(::RegOverridePredefKey(HKEY_CLASSES_ROOT,key)!=ERROR_SUCCESS)
+            return failed(63,"child_override");
+        if(ATL::AtlSandboxRegistryArm(key,proof)!=S_OK)
+            return failed(64,"child_scope_authorize");
+        if(module.RegisterServer()!=S_OK ||
+           !hasValue(key,P1B_CLASS_A) || !hasValue(key,P1B_CLASS_B))
+            return failed(65,"child_real_registration");
+        if(::RegFlushKey(key)!=ERROR_SUCCESS)
+            return failed(66,"child_persist_to_hive");
+        // Intentionally bypass C++ destructors and RegOverridePredefKey
+        // reset. This changes no HKCR state in other processes.
+        ::TerminateProcess(::GetCurrentProcess(),77);
+        return failed(67,"unexpected_termination_return");
+    }
+    if(std::strcmp(mode,"--recover")==0) {
+        const bool persisted=hasValue(key,P1B_CLASS_A) &&
+                             hasValue(key,P1B_CLASS_B);
+        ::RegCloseKey(key);
+        if(!persisted)return failed(68,"orphaned_entries_missing");
+        // Separate fresh process with *no* HKCR override, clean only
+        // the GUID-scoped HKCU root after validating ownership proof.
+        if(::RegDeleteTreeW(HKEY_CURRENT_USER,path.c_str())!=ERROR_SUCCESS)
+            return failed(69,"orphaned_key_cleanup");
+        HKEY stale=nullptr;
+        const LSTATUS status=::RegOpenKeyExW(HKEY_CURRENT_USER,
+                          path.c_str(),0,KEY_READ,&stale);
+        if(stale)::RegCloseKey(stale);
+        return status==ERROR_FILE_NOT_FOUND && !stale
+             ? 0 : failed(70,"stale_key_after_recovery");
+    }
+    ::RegCloseKey(key);
+    return failed(71,"unknown_recovery_mode");
+}
+static bool spawnSelf(const wchar_t* mode,DWORD expected) {
+    wchar_t path[MAX_PATH]={};
+    DWORD n=::GetModuleFileNameW(nullptr,path,MAX_PATH);
+    if(!n || n>=MAX_PATH)return false;
+    std::wstring command=L"\"";
+    command+=path;
+    command+=L"\" ";
+    command+=mode;
+    STARTUPINFOW startup={};
+    startup.cb=sizeof(startup);
+    PROCESS_INFORMATION process={};
+    if(!::CreateProcessW(path,&command[0],nullptr,nullptr,FALSE,
+         CREATE_NO_WINDOW,nullptr,nullptr,&startup,&process))
+        return false;
+    const DWORD waited=::WaitForSingleObject(process.hProcess,15000);
+    if(waited!=WAIT_OBJECT_0) {
+        ::TerminateProcess(process.hProcess,99);
+        ::WaitForSingleObject(process.hProcess,5000);
+    }
+    DWORD code=0;
+    const BOOL read=::GetExitCodeProcess(process.hProcess,&code);
+    ::CloseHandle(process.hThread);
+    ::CloseHandle(process.hProcess);
+    return waited==WAIT_OBJECT_0 && read && code==expected;
+}
+struct RecoveryEnvGuard {
+    ~RecoveryEnvGuard() {
+        ::SetEnvironmentVariableW(L"ATL_P1C_RECOVERY_KEY",nullptr);
+        ::SetEnvironmentVariableW(L"ATL_P1C_RECOVERY_PROOF",nullptr);
+    }
+};
+static int crashRecovery() {
+    Scope scope;
+    if(!scope.create())return failed(80,"create_recovery_scratch");
+    wchar_t hex[24]={};
+    std::swprintf(hex,24,L"%08lX",
+                  static_cast<unsigned long>(scope.proof));
+    RecoveryEnvGuard env;
+    if(!::SetEnvironmentVariableW(L"ATL_P1C_RECOVERY_KEY",scope.path.c_str()) ||
+       !::SetEnvironmentVariableW(L"ATL_P1C_RECOVERY_PROOF",hex))
+        return failed(81,"pass_scoped_recovery_authority");
+    if(!spawnSelf(L"--abandon",77) ||
+       !hasValue(scope.root,P1B_CLASS_A) ||
+       !hasValue(scope.root,P1B_CLASS_B))
+        return failed(82,"abrupt_exit_or_unflushed_registry");
+    // Closing the parent handle allows the recovery child to perform
+    // complete removal with no handles held by the parent.
+    ::RegCloseKey(scope.root);
+    scope.root=nullptr;
+    if(!spawnSelf(L"--recover",0))
+        return failed(83,"independent_recovery_cleanup");
+    HKEY remaining=nullptr;
+    const LSTATUS status=::RegOpenKeyExW(HKEY_CURRENT_USER,
+                  scope.path.c_str(),0,KEY_READ,&remaining);
+    if(remaining)::RegCloseKey(remaining);
+    if(status!=ERROR_FILE_NOT_FOUND || remaining)
+        return failed(84,"residual_key_after_second_process");
+    scope.owned=false;
+    scope.path.clear();
+    return 0;
+}
+int main(int argc,char** argv) {
+    if(argc==2)return recoveryChild(argv[1]);
+    if(argc!=1)return failed(90,"unexpected_arguments");
     HRESULT apartment=::CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     if(FAILED(apartment))return failed(1,"apartment");
     Scope scope;
@@ -197,6 +342,8 @@ int main() {
     ::CoUninitialize();
     if(error)return failed(error,"registrar_contract");
     if(!clean)return failed(25,"sandbox_cleanup");
-    std::puts("ATL_P1C_REAL_OK guarded=1 writes=2 rollback=1 duplicate=1 targeted=1 clean=1");
+    const int recovered=crashRecovery();
+    if(recovered)return recovered;
+    std::puts("ATL_P1C_REAL_OK guarded=1 writes=2 rollback=1 duplicate=1 targeted=1 clean=1 recovered=1");
     return 0;
 }
