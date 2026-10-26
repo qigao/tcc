@@ -20,7 +20,7 @@ if (!$header.Contains('AtlSandboxRegistryArm') -or
 }
 $one=(Resolve-Path 'tests/atl_conformance/registry_real.cpp').Path
 $two=(Resolve-Path 'tests/atl_conformance/com_p1b_entry.cpp').Path
-$expected='ATL_P1C_REAL_OK guarded=1 writes=2 rollback=1 duplicate=1 targeted=1 clean=1'
+$expected='ATL_P1C_REAL_OK guarded=1 writes=2 rollback=1 duplicate=1 targeted=1 clean=1 recovered=1'
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 foreach ($cpu in @('x86_64','aarch64')) {
   $compiler=Join-Path $LLVMRoot "$cpu-w64-mingw32-clang++.exe"
@@ -50,4 +50,4 @@ for ($i=1; $i -le 5; ++$i) {
     throw "OpenATL P1-C native x64 sandbox registrar failed run $i exit=$($rc): $observed"
   }
 }
-Write-Host 'OpenATL P1-C native Windows x64 sandbox-authorized registrar/rollback 5/5 PASS'
+Write-Host 'OpenATL P1-C native Windows x64 sandbox register/rollback/abrupt-child/recovery 5/5 PASS'

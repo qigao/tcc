@@ -31,3 +31,24 @@ https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regoverride
 
 The upstream MIT OpenATL source is unchanged. RATL LGPL/GPL code is
 not used. PR #1 stays Draft / DO NOT MERGE.
+
+### Required controlled abrupt-exit recovery gate
+
+`registry_real.cpp` now runs a **parent / aborted child / independent
+recovery child** sequence after its scoped registrar tests. The parent
+creates a fresh GUID-named HKCU root and sets a GUID-derived proof, and
+only the child receiving the matching scoped environment may access it.
+
+The first child proves remapping and registers two distinct test CLSIDs
+using the test-only OpenATL API, flushes the sandbox hive, then intentionally
+exits through `TerminateProcess(..., 77)` without C++ cleanup. The parent
+checks both persisted keys under the *direct HKCU handle* and closes its
+handle before starting a **second fresh process**. That recovery child
+validates the GUID shape and proof, confirms the two records, removes the
+sandbox root and returns 0. The parent independently verifies its absence.
+
+Each platform requires five normal+recovery executions, no manual clearing,
+and exact expected stdout. This validates a controlled process-abort
+scenario, **not** power-loss durability, arbitrary crash recovery,
+production DllRegisterServer or external service activation. No HKCR/HKLM
+persistent writes are authorized.

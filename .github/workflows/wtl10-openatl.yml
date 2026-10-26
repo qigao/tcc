@@ -250,7 +250,7 @@ jobs:
             }
           }
           Write-Host 'OpenATL native Windows ARM64 isolated HKCR test 5/5 PASS'
-          $expectedReal = 'ATL_P1C_REAL_OK guarded=1 writes=2 rollback=1 duplicate=1 targeted=1 clean=1'
+          $expectedReal = 'ATL_P1C_REAL_OK guarded=1 writes=2 rollback=1 duplicate=1 targeted=1 clean=1 recovered=1'
           for ($i = 1; $i -le 5; $i++) {
             $result = @(& ./wtl10-arm64/atl_p1c_registrar_arm64.exe 2>&1)
             $rc = $LASTEXITCODE
@@ -259,6 +259,6 @@ jobs:
               throw "OpenATL P1-C native ARM64 registrar test failed run $i exit=$($rc): $actual"
             }
           }
-          Write-Host 'OpenATL P1-C native Windows ARM64 scoped registrar/rollback 5/5 PASS'
+          Write-Host 'OpenATL P1-C native Windows ARM64 scoped registrar/rollback/separate-process crash recovery 5/5 PASS'
           Write-Host 'Native ARM64 WTL10 hidden-window/dialog and RX thunk runtime 5/5 PASS'
           Write-Host 'Native Windows ARM64 WTL10/OpenATL/TinyCC C ABI 5/5 PASS'
