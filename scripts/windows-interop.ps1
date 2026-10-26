@@ -41,6 +41,11 @@ try {
     '-o', 'poc_atomic64_badabi.dll')
   Invoke-Checked $TinyCCExe @("-I$inc", '-DPOC_ATOMIC64_EXTERNAL_DLL=1',
     (Join-Path $root 'src/atomic/win64_dll_client.c'),
+    (Join-Path $root 'src/threads/threads.c'),
+    (Join-Path $root 'tests/atomic_small_thread.c'), '-o', 'atomic_small_thread_tcc.exe')
+  for ($i = 1; $i -le 5; ++$i) { Invoke-Checked (Join-Path $bin 'atomic_small_thread_tcc.exe') @() }
+  Invoke-Checked $TinyCCExe @("-I$inc", '-DPOC_ATOMIC64_EXTERNAL_DLL=1',
+    (Join-Path $root 'src/atomic/win64_dll_client.c'),
     (Join-Path $root 'src/atomic/ptr64.c'), (Join-Path $root 'src/threads/threads.c'),
     (Join-Path $root 'tests/atomic64_thread.c'), '-o', 'atomic64_thread_tcc.exe')
   for ($i = 1; $i -le 5; ++$i) { Invoke-Checked (Join-Path $bin 'atomic64_thread_tcc.exe') @() }

@@ -60,3 +60,18 @@ Baseline and transformed variants must produce identical exit code and stdout ov
 3. Diagnose RATL Clang/MinGW compatibility separately; keep legacy PSEH, resource and COM APIs within C++ DLL.
 4. Expand the now-required Windows TinyCC/RATL/obfus.h x64 smoke into x86 calling-convention, ownership, cleanup and deeper COM/ATL tests.
 5. Add layout/versioned ABI and native ARM64 ownership/cancellation stress tests before any downstream usage. Do not mark Salts TinyCC-ready based on these PoCs.
+
+## Native small-width atomics
+
+Separate `poc_atomic8` and `poc_atomic16` primitives use naturally aligned,
+exact-width storage. Native GNU/Clang uses real `__atomic`, Linux x86-64
+TinyCC uses 8/16-bit `xchg`/`lock xadd`/`cmpxchg`, and Linux ARM64
+TinyCC uses `LDARB/LDARH/STLRB/STLRH/LDAXRB/LDAXRH/STLXRB/STLXRH`.
+The fixtures require exact subword operations by placing sentinels on both
+sides of the storage (no unsafe expanded 32-bit CAS and no alias of Salts
+`_Atomic` storage). Windows llvm-mingw uses Clang's native 8/16-bit `__atomic`
+for a version-2 DLL `poc_win_small_dispatch` C ABI, and TinyCC calls this
+through the existing 64-lease protected DLL facade. Any unknown operation,
+version, width or unaligned 16-bit request fails closed. Tests cover rollover
+CAS/RMW, 4-worker contention and 8-bit/16-bit acquire/release publication.
+The architecture still does not qualify generic `stdatomic.h` semantics.

@@ -63,3 +63,12 @@ See [design and evidence gates](docs/DESIGN.md), and [dependency pins](docs/UPST
 ## Windows x64 DLL admission and drain
 
 The cross-toolchain DLL binding now has a **bounded 64-lease admission state machine**, with fail-closed READY → DRAIN → UNLOADING → EMPTY transitions. `poc_atomic64_backend_shutdown()` returns `POC_ATOMIC64_BUSY` for in-flight borrowed or ordinary atomic operations. Every operation holds a lease until the native function returns; the loader does not call `FreeLibrary` until all leases are retired. The Windows TinyCC acceptance test exercises capacity 64/65, a genuine parked worker holding a lease, concurrent drain, refusal of new work, token double-return rejection, final unload and quiescent reopen. This remains a *private POC* ABI, not a production DSO API.
+
+## 8-bit and 16-bit native atomic matrix
+
+New private `poc_atomic8`/`poc_atomic16` APIs use exact-size storage and
+independent native instructions or compiler builtins. Test coverage includes
+overflow, failed-CAS writeback, exchange/add under contention, exact-width
+neighbor sentinel integrity and message publication. Windows TinyCC uses a
+versioned llvm-mingw DLL dispatcher admitted through the same bounded lease
+Owner; it does not pretend to accept unsupported native COFF object inputs.

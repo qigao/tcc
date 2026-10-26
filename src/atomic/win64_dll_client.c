@@ -14,6 +14,7 @@
 #include <windows.h>
 #include <stdint.h>
 #include "poc/atomic64.h"
+#include "poc/atomic_small.h"
 #if !defined(_WIN64) && !defined(__x86_64__)
 #error "DLL client requires Windows x64"
 #endif
@@ -22,6 +23,9 @@ typedef uint64_t (__cdecl *load_fn)(const poc_atomic64 *);
 typedef void (__cdecl *store_fn)(poc_atomic64 *, uint64_t);
 typedef uint64_t (__cdecl *rmw_fn)(poc_atomic64 *, uint64_t);
 typedef int (__cdecl *cas_fn)(poc_atomic64 *, uint64_t *, uint64_t);
+typedef int (__cdecl *small_fn)(void *, unsigned, unsigned, unsigned *, unsigned);
+enum { SMALL_LOAD = 1, SMALL_STORE = 2, SMALL_EXCHANGE = 3,
+       SMALL_ADD = 4, SMALL_CAS = 5 };
 enum { EMPTY = 0, READY = 1, DRAIN = 2, MUTATING = 3, LEASE_STEP = 4 };
 static volatile LONG g_admission = EMPTY;
 static unsigned g_generation;
@@ -31,6 +35,7 @@ static store_fn g_store;
 static rmw_fn g_exchange;
 static rmw_fn g_add;
 static cas_fn g_cas;
+static small_fn g_small;
 
 static LONG admission_read(void) {
     return InterlockedCompareExchange(&g_admission, 0, 0);
@@ -61,6 +66,7 @@ int poc_atomic64_backend_init(const char *path) {
     store_fn store;
     rmw_fn exchange, add;
     cas_fn cas;
+    small_fn small;
     if (!path || InterlockedCompareExchange(&g_admission, MUTATING, EMPTY) != EMPTY)
         return -1;
     candidate = LoadLibraryA(path);
@@ -75,9 +81,11 @@ int poc_atomic64_backend_init(const char *path) {
     exchange = (rmw_fn)GetProcAddress(candidate, "poc_win64_exchange");
     add = (rmw_fn)GetProcAddress(candidate, "poc_win64_fetch_add");
     cas = (cas_fn)GetProcAddress(candidate, "poc_win64_compare_exchange");
-    if (!version || version() != 1u || !storage || storage() != 8u ||
+    small = (small_fn)GetProcAddress(candidate, "poc_win_small_dispatch");
+    if (!version || version() != 2u || !storage || storage() != 8u ||
         sizeof(poc_atomic64) != 8u || !load || !store || !exchange ||
-        !add || !cas) {
+        !add || !cas || !small ||
+        sizeof(poc_atomic8) != 1u || sizeof(poc_atomic16) != 2u) {
         FreeLibrary(candidate);
         InterlockedExchange(&g_admission, EMPTY);
         return -1;
@@ -88,6 +96,7 @@ int poc_atomic64_backend_init(const char *path) {
     g_exchange = exchange;
     g_add = add;
     g_cas = cas;
+    g_small = small;
     ++g_generation;
     if (g_generation == 0u) ++g_generation;
     InterlockedExchange(&g_admission, READY);
@@ -133,6 +142,7 @@ int poc_atomic64_backend_shutdown(void) {
         g_exchange = NULL;
         g_add = NULL;
         g_cas = NULL;
+        g_small = NULL;
         InterlockedExchange(&g_admission, EMPTY);
         return 0;
     }
@@ -172,4 +182,72 @@ int poc_atomic64_compare_exchange(poc_atomic64 *p, uint64_t *e, uint64_t d) {
     result = g_cas(p, e, d);
     admission_leave();
     return result;
+}
+
+/* Every subword call uses the exact same bounded DLL owner admission gate as
+ * the 64-bit methods. No DLL pointer escapes its lease lifetime. */
+static int small_call(void *slot, unsigned width, unsigned op,
+                      unsigned *value, unsigned operand) {
+    int result;
+    require_admitted();
+    result = g_small(slot, width, op, value, operand);
+    admission_leave();
+    if (result < 0) ExitProcess(126);
+    return result;
+}
+uint8_t poc_atomic8_load(const poc_atomic8 *p) {
+    unsigned v = 0;
+    (void)small_call((void *)&p->value, 1u, SMALL_LOAD, &v, 0u);
+    return (uint8_t)v;
+}
+void poc_atomic8_store(poc_atomic8 *p, uint8_t v) {
+    unsigned unused = 0;
+    (void)small_call((void *)&p->value, 1u, SMALL_STORE, &unused, v);
+}
+uint8_t poc_atomic8_exchange(poc_atomic8 *p, uint8_t v) {
+    unsigned old = 0;
+    (void)small_call((void *)&p->value, 1u, SMALL_EXCHANGE, &old, v);
+    return (uint8_t)old;
+}
+uint8_t poc_atomic8_fetch_add(poc_atomic8 *p, uint8_t v) {
+    unsigned old = 0;
+    (void)small_call((void *)&p->value, 1u, SMALL_ADD, &old, v);
+    return (uint8_t)old;
+}
+int poc_atomic8_compare_exchange(poc_atomic8 *p, uint8_t *expected, uint8_t desired) {
+    unsigned observed;
+    int ok;
+    if (!expected) ExitProcess(126);
+    observed = *expected;
+    ok = small_call((void *)&p->value, 1u, SMALL_CAS, &observed, desired);
+    *expected = (uint8_t)observed;
+    return ok;
+}
+uint16_t poc_atomic16_load(const poc_atomic16 *p) {
+    unsigned v = 0;
+    (void)small_call((void *)&p->value, 2u, SMALL_LOAD, &v, 0u);
+    return (uint16_t)v;
+}
+void poc_atomic16_store(poc_atomic16 *p, uint16_t v) {
+    unsigned unused = 0;
+    (void)small_call((void *)&p->value, 2u, SMALL_STORE, &unused, v);
+}
+uint16_t poc_atomic16_exchange(poc_atomic16 *p, uint16_t v) {
+    unsigned old = 0;
+    (void)small_call((void *)&p->value, 2u, SMALL_EXCHANGE, &old, v);
+    return (uint16_t)old;
+}
+uint16_t poc_atomic16_fetch_add(poc_atomic16 *p, uint16_t v) {
+    unsigned old = 0;
+    (void)small_call((void *)&p->value, 2u, SMALL_ADD, &old, v);
+    return (uint16_t)old;
+}
+int poc_atomic16_compare_exchange(poc_atomic16 *p, uint16_t *expected, uint16_t desired) {
+    unsigned observed;
+    int ok;
+    if (!expected) ExitProcess(126);
+    observed = *expected;
+    ok = small_call((void *)&p->value, 2u, SMALL_CAS, &observed, desired);
+    *expected = (uint16_t)observed;
+    return ok;
 }
