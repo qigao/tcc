@@ -15,5 +15,8 @@ The LLVM 14 host pass qualification applies the audited local compatibility patc
 
 The pinned TinyCC-builder archive supplies three distinct Windows driver
 binaries: `tcc.exe` for x64, `i386-win32-tcc.exe` for Windows x86
-native execution, and `arm64-win32-tcc.exe` for ARM64 Windows
-**cross-compilation only** in the current x64 runner.
+native execution, and `arm64-win32-tcc.exe` to produce ARM64 PE
+artifacts on the x64 runner. Those artifacts are executed separately on
+the native GitHub-hosted `windows-11-vs2026-arm` image after SHA-256
+and PE-machine verification. The native ARM64 work does not rely on
+Windows-on-ARM x64 emulation for the tested executable processes.

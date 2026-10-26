@@ -39,7 +39,7 @@ The `poc_thread`, `poc_mutex`, `poc_condition` and `poc_tss` types are **private
 
 ## Separate Windows i686 ABI gate
 
-The LLVM-mingw i686 toolchain builds and executes a 32-bit Windows PE DLL/client. A dedicated caller checks exported `cdecl`/`stdcall` function names, both calling conventions, ESP restoration and a layout handshake for a fixed-width C structure. This test is independent of the 64-bit Atomic backend. It qualifies only llvm-mingw i686, **not** TinyCC's 32-bit assembler/linker or full ATL/COM support.
+Both llvm-mingw i686 and `i386-win32-tcc.exe` build real 32-bit PE clients on the Windows x64 runner. Real execution checks `cdecl`/`stdcall`, decorated exports, ESP restoration and fixed-width C structure layout. TinyCC also executes versioned i686 DLL-backed Atomic8/16/64 and pointer32 tests with a bounded lease Owner; separate FLS and shutdown-overlap tests run repeatedly. This establishes the named native x86 C clients, **not** complete ATL/COM/SEH or mixed-toolchain object-file compatibility.
 
 ## RATL and Windows C ABI
 
@@ -55,11 +55,20 @@ Baseline and transformed variants must produce identical exit code and stdout ov
 
 ## Next gates
 
-1. Make the x86-64 TinyCC GAS workflow a mandatory job after exact pinned-version runtime evidence.
-2. Qualify llvm-mingw C/Win32 on actual Windows runner, including DLL load/unload.
-3. Diagnose RATL Clang/MinGW compatibility separately; keep legacy PSEH, resource and COM APIs within C++ DLL.
-4. Expand the now-required Windows TinyCC/RATL/obfus.h x64 smoke into x86 calling-convention, ownership, cleanup and deeper COM/ATL tests.
-5. Add layout/versioned ABI and native ARM64 ownership/cancellation stress tests before any downstream usage. Do not mark Salts TinyCC-ready based on these PoCs.
+1. Add independent formal/litmus proofs for weak-memory publication and
+   cancellation using native Windows ARM64 and Linux ARM64 runtime evidence.
+2. Test complete `stdatomic.h` and `threads.h` language and ABI contracts
+   in isolation, including compiler-specific layouts; do **not** reinterpret
+   native Salts or C11 `_Atomic` storage.
+3. Expand cross-compiler lifetime tests to adversarial concurrent
+   `FreeLibrary`/DSO unload, lease/token misuse, fault injection and
+   memory leak accounting. No native ASM TSan visibility is claimed.
+4. Qualify real RATL/COM/SEH usage and Windows PE resources beyond
+   current fixed C ABI samples, and compare the latest llvm-mingw
+   Clang against a matching LLVM obfuscation pass build.
+5. Do not mark Salts/TurboMedia/CNet/CFlow compiler support ready or
+   merge the Draft PR until application-level installed SDK parity
+   and consumer CI establish the production ABI and ownership boundaries.
 
 ## Native small-width atomics
 
@@ -93,12 +102,17 @@ memory crosses the DLL ABI. Key destruction remains quiescent-only.
 
 ## Windows ARM64 cross-compiler gate
 
-The pinned `arm64-win32-tcc.exe` and llvm-mingw AArch64 drivers generate
-PE/COFF ARM64 sample executables on an x64 CI host. Machine word `0xAA64`
-is independently parsed from the PE header. The gate covers compile and
-link of selected Windows API, Atomic32 and thread sources; it does not
-execute these binaries. Windows ARM64 native execution and system
-interoperability are still explicitly unqualified.
+The pinned `arm64-win32-tcc.exe` and llvm-mingw AArch64 drivers
+cross-compile ARM64 PE/DLL artifacts on a Windows x64 runner. The
+workflow stores a SHA-256 manifest and verifies PE machine `0xAA64`
+both before upload and on a **native ARM64 Windows 11 hosted runner**.
+The native job executes Win32 API, Atomic32, Threads/FLS and
+shutdown-overlap binaries from both compiler paths, and native ARM64
+TinyCC clients dynamically invoke an llvm-mingw AArch64 version-2
+DLL providing Atomic8/16/64 and pointer64 CAS. This closes the
+specified ARM64 runtime acceptance gate, but it does **not** qualify
+generic C11 atomics, mixed `.obj` linking, full ATL/COM/SEH,
+production DSO unloading or a complete installed SDK.
 
 ## Windows TinyCC i686 subword and pointer32 qualification
 

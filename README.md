@@ -4,19 +4,16 @@ This repository is an **experimental, standalone C ABI / compiler qualification 
 
 ## Scope and status
 
-| Experiment | Required behavior | Current admission |
+| Experiment | Required behavior | Current evidence |
 | --- | --- | --- |
-| Linux GCC/Clang + atomic32 | real four-worker RMW/CAS and publish/consume | locally exercised |
-| Linux TinyCC + external GAS atomic32 | same API and threaded tests | required x64 CI |
-| Windows llvm-mingw | Win32 handles, events, C ABI DLL | required x64 CI |
-| Windows TinyCC + `Interlocked` | same atomic32/thread client | real Win x64 runtime qualified |
-| TCC C client + llvm-mingw C DLL | `LoadLibrary`/`GetProcAddress`, values/ownership | required Windows x64 CI |
-| TCC C client + llvm-mingw C++/RATL DLL | RATL templates and BSTRs stay inside LLVM-built DLL | required Windows x64 sample |
-| `obfus.h` on Windows TinyCC | semantic parity to unobfuscated source, 2 seeds | required Windows x64 smoke |
-| C11-style thread facade | mutex, condition, join, TLS destructors, bounded queue | compiler matrix qualification |
-| Native 64-bit atomic and pointer CAS | Linux GNU/GAS, AArch64 and Windows x64 TCC with platform-specific ASM | required compiler matrix |
-| Linux native AArch64 atomic32 | LDAR/STLR, LDAXR/STLXR and real 8-thread workload | native ARM64 CI qualification |
-| `obfuscator-llvm` pass | verified IR transformation + seven-input parity under LLVM 14 | required host-LLVM14 workflow; not llvm-mingw |
+| Linux GCC/Clang and native TinyCC | independent 8/16/32/64-bit Atomic, pointer CAS, bounded Threads | Linux x64 and native ARM64 required CI |
+| Windows TinyCC x64 | Atomic 8/16/32/64, 64-bit pointer CAS, Threads/FLS, DLL BUSY/drain | Native Windows x64 required CI |
+| Windows TinyCC x86 | Atomic 8/16/32/64, pointer32, Threads/FLS, x86 cdecl/stdcall | Native Windows x86 processes on x64 runner, required CI |
+| Windows TinyCC ARM64 | Win32, Atomic 8/16/32/64, pointer64, Threads/FLS and shutdown overlap | **Native Windows ARM64 runner**, required CI |
+| Windows llvm-mingw x64/ARM64 | reference native Atomic32/Threads and ABI DLL providers | Required Windows native/ARM64 CI |
+| Cross-compiler RATL | C++/BSTR isolated inside llvm-mingw DLL, TinyCC C caller | Windows x64 sample, required CI |
+| `obfus.h` on TinyCC | two-seed semantic parity, no anti-debug/fake signatures | Windows x64, required CI |
+| `obfuscator-llvm` | IR actually transformed and seven-input output parity | Required host LLVM14; newer llvm-mingw plugin not qualified |
 
 `RATL` means *ReactOS Active Template Library*, a **Windows C++ ATL** implementation, **not** an atomic primitives library. TinyCC compiles C only: all RATL C++ objects stay behind an exported, version-checked C ABI. Windows and Linux platform backends are distinct and never silently fall back to plain volatile storage.
 
@@ -82,16 +79,21 @@ fixture and the shutdown-overlap fixture. The FLS destructor is
 explicitly a `WINAPI` trampoline instead of casting a C callback
 to the incompatible x86 `stdcall` type. The source remains a private POC. The Windows x86 TinyCC gate is now **required**, with 20 repeated executions of the two lifecycle fixtures; full RATL/COM support on x86 has not been qualified.
 
-## Windows ARM64 cross-compilation (not runtime)
+## Windows ARM64 native runtime qualification
 
-The pinned Windows TinyCC-builder also provides `arm64-win32-tcc.exe`.
-On the x64 Windows runner a **required, compile-only** job uses
-`aarch64-w64-mingw32-clang.exe` and `arm64-win32-tcc.exe`
-to generate Windows PE images. It verifies the PE signature and
-`IMAGE_FILE_MACHINE_ARM64` (`0xAA64`) and builds sample Windows API,
-Atomic32 and bounded Threads clients. This does **not** execute Windows
-ARM64 binaries or qualify native ARM64 Windows thread/atomic behavior.
-Only a native Windows ARM64 machine/runner may close that runtime gate.
+The pinned x64-hosted cross compiler `arm64-win32-tcc.exe` and
+llvm-mingw AArch64 build genuine ARM64 PE binaries and separate DLL
+providers. They are uploaded together with a SHA-256 manifest and
+downloaded by GitHub Actions' native `windows-11-vs2026-arm` runner.
+
+That job checks the **actual host architecture**, PE machine `0xAA64`,
+and each binary/DLL's SHA-256 before running. Native execution includes
+Windows API events and counters, Atomic32 with both compilers, TinyCC
+bounded Threads/FLS, cancel/close overlap, and TinyCC-to-llvm-mingw
+DLL-based **Atomic8/16/64 plus pointer64 CAS**. The latter exercises
+bad ABI rejection, 64-lease Owner, quiescent reload and fail-closed
+admission. This is real ARM64 Windows runtime acceptance, not a cross
+compile claim. More complex ARM64 plugin/COM/SEH tests remain open.
 
 ## Windows i686 TinyCC: exact-width Atomic8/16 and pointer32
 
@@ -105,8 +107,9 @@ An independent pointer32 test adds 2,400 producer/consumer handoffs,
 bad-ABI rejection, and quiescent DLL unload/reopen.
 
 This does **not** make TinyCC accept llvm-mingw COFF object files.
-Unlike the separately qualified Windows x64 DLL Owner, the x86
-DLL initialization and unload remain **quiescent-only**.
+The x86 DLL now uses its own bounded 64-lease Interlocked Owner
+and returns `BUSY` on shutdown with outstanding borrowed calls;
+see the separate lease-drain qualification below.
 
 ## Windows i686 DLL bounded admission
 
