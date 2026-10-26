@@ -172,3 +172,24 @@ No `DYLD_*` override or library-validation-disabling entitlement is
 used. This proves **ad-hoc Hardened Runtime execution** only, not
 Developer ID identity, Apple notarization, an App Sandbox bundle or
 distribution to end users.
+
+## llvm-mingw Windows ATL/WTL ports
+
+The Windows compiler POC clones two additional header-only codebases
+at pinned upstream commits: modern MIT clean-room
+[`kkhaike/openatl`](https://github.com/kkhaike/openatl) for llvm-mingw
+C++17 x64 and ARM64, and legacy
+[`waiting4love/WTL4MinGW`](https://github.com/waiting4love/WTL4MinGW)
+for its documented x86 MinGW compatibility only. Each codebase is
+built into an independent Windows DLL, and a real TinyCC-compiled
+**C** program calls its versioned `LoadLibrary/GetProcAddress` ABI.
+Both x64 OpenATL and x86 WTL4MinGW passed five native runtime calls;
+OpenATL also passed five times on **native Windows ARM64**.
+
+Do not mix OpenATL, WTL4MinGW and existing ReactOS RATL headers or
+C++ allocation/object layouts. OpenATL's current window-procedure
+thunk needs W^X hardening; WTL4MinGW's bundled file-level CPL
+notices require a separate redistribution/license audit despite its
+root MIT license. Implementation and reproducible test commands:
+[ATL_PORTS.md](docs/ATL_PORTS.md), tracked by
+[Issue #4](https://github.com/qigao/tcc/issues/4).
