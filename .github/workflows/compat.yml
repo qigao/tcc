@@ -197,6 +197,19 @@ jobs:
             & $program @args_
             if ($LASTEXITCODE -ne 0) { throw "$program exited $LASTEXITCODE" }
           }
+          $clang32 = Join-Path $env:LLVM_MINGW_BIN 'i686-w64-mingw32-clang.exe'
+          if (-not (Test-Path $clang32)) { throw 'Pinned llvm-mingw i686 compiler missing' }
+          # Strict i686 C ABI: llvm-mingw builds DLL, TinyCC compiles the client.
+          Invoke-Checked $clang32 @('-std=c11', '-O2', '-shared', "-I$inc",
+            'tests/win_x86/atomic_dispatch.c', '-o', 'build-x86/poc_x86_atomic.dll')
+          Invoke-Checked $clang32 @('-std=c11', '-O2', '-shared',
+            'tests/win_x86/atomic_wrongabi.c', '-o', 'build-x86/poc_x86_atomic_badabi.dll')
+          Invoke-Checked $tcc32.FullName @("-I$inc", '-DPOC_ATOMIC_SMALL_X86_DLL=1',
+            'src/atomic/win_x86_dll_client.c', 'src/threads/threads.c',
+            'tests/atomic_small_thread.c', '-o', 'build-x86/atomic_small_tcc_x86.exe')
+          Invoke-Checked $tcc32.FullName @("-I$inc",
+            'src/atomic/win_x86_dll_client.c', 'src/threads/threads.c',
+            'tests/win_x86/atomic_ptr32_test.c', '-o', 'build-x86/atomic_ptr32_tcc_x86.exe')
           Invoke-Checked $tcc32.FullName @('tests/win_x86/abi_client.c', '-o', 'build-x86/abi_client_tcc.exe')
           Invoke-Checked $tcc32.FullName @("-I$inc", 'src/atomic/win_interlocked.c',
             'tests/atomic_thread.c', '-o', 'build-x86/atomic_thread_tcc_x86.exe')
@@ -208,8 +221,9 @@ jobs:
           Push-Location $bin
           try {
             foreach ($name in @('abi_client_tcc.exe', 'atomic_thread_tcc_x86.exe',
+                                'atomic_small_tcc_x86.exe', 'atomic_ptr32_tcc_x86.exe',
                                 'thread_contract_tcc_x86.exe', 'thread_shutdown_overlap_tcc_x86.exe')) {
-              $repetitions = if ($name -like 'thread_*') { 20 } else { 5 }
+              $repetitions = if ($name -like 'thread_*') { 20 } else { 10 }
               for ($i = 0; $i -lt $repetitions; ++$i) {
                 Invoke-Checked (Join-Path $bin $name) @()
               }

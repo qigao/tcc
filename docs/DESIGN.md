@@ -99,3 +99,17 @@ is independently parsed from the PE header. The gate covers compile and
 link of selected Windows API, Atomic32 and thread sources; it does not
 execute these binaries. Windows ARM64 native execution and system
 interoperability are still explicitly unqualified.
+
+## Windows TinyCC i686 subword and pointer32 qualification
+
+Native TinyCC x86 clients use an llvm-mingw i686 DLL with a fixed-width
+`cdecl` dispatcher: width 1, 2 or 4 bytes; load/store/exchange/add/CAS.
+All operations are emitted by Clang as genuine `__atomic` primitives
+on dedicated storage, never as non-atomic `volatile` RMW. The DLL
+returns exact prior values, writes back the expected value on failed CAS,
+and rejects misaligned 16/32-bit slots. Export name-decoration fallbacks
+and ABI version/size negotiation are explicit. The client owns pointers
+and thread lifetimes; no cross-CRT buffers, C++ objects or file handles
+are exchanged. The 32-bit pointer CAS/publication test rejects mismatched
+ABI DLLs and verifies unload/reopen only after all borrowers have joined.
+This i686 proof does not yet implement the x64 concurrent lease drain.

@@ -92,3 +92,18 @@ to generate Windows PE images. It verifies the PE signature and
 Atomic32 and bounded Threads clients. This does **not** execute Windows
 ARM64 binaries or qualify native ARM64 Windows thread/atomic behavior.
 Only a native Windows ARM64 machine/runner may close that runtime gate.
+
+## Windows i686 TinyCC: exact-width Atomic8/16 and pointer32
+
+The native `i386-win32-tcc.exe` now exercises an llvm-mingw i686
+DLL providing 8/16/32-bit `__atomic` primitives through a narrow,
+versioned **cdecl** API. TinyCC calls `LoadLibrary/GetProcAddress`
+and validates exported ABI version and storage layout. Tests cover
+subword overflow, failed-CAS expected writeback, neighboring sentinel
+integrity, four-worker contention, and real release/acquire publication.
+An independent pointer32 test adds 2,400 producer/consumer handoffs,
+bad-ABI rejection, and quiescent DLL unload/reopen.
+
+This does **not** make TinyCC accept llvm-mingw COFF object files.
+Unlike the separately qualified Windows x64 DLL Owner, the x86
+DLL initialization and unload remain **quiescent-only**.

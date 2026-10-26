@@ -6,6 +6,8 @@
 #include <windows.h>
 #if defined(POC_ATOMIC64_EXTERNAL_DLL)
 #include "poc/atomic64.h"
+#elif defined(POC_ATOMIC_SMALL_X86_DLL)
+#include "poc/win_x86_atomic.h"
 #endif
 #else
 #include <sched.h>
@@ -66,6 +68,8 @@ int main(void) {
     int i, result, errors = 0;
 #if defined(_WIN32) && defined(POC_ATOMIC64_EXTERNAL_DLL)
     if (poc_atomic64_backend_init("poc_atomic64_win.dll")) return 29;
+#elif defined(_WIN32) && defined(POC_ATOMIC_SMALL_X86_DLL)
+    if (poc_x86_atomic_backend_init("poc_x86_atomic.dll")) return 29;
 #endif
     if (sizeof(poc_atomic8) != 1 || sizeof(poc_atomic16) != 2 ||
         ((uintptr_t)&slot16.counter & 1u) != 0u) return 1;
@@ -114,6 +118,8 @@ int main(void) {
     if (poc_thread_join(&producer, &result) || result != 18 || errors) return 15;
 #if defined(_WIN32) && defined(POC_ATOMIC64_EXTERNAL_DLL)
     if (poc_atomic64_backend_shutdown()) return 30;
+#elif defined(_WIN32) && defined(POC_ATOMIC_SMALL_X86_DLL)
+    if (poc_x86_atomic_backend_shutdown()) return 30;
 #endif
     puts("atomic8/16: subword CAS/RMW, boundary guards, publication PASS");
     return 0;
