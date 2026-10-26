@@ -1,0 +1,54 @@
+name: Android TinyCC NDK/Bionic qualification
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android-tcc-cross:
+    name: Android ${{ matrix.abi }} TinyCC NDK build
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: x86_64
+            cpu: x86_64
+            triple: x86_64-linux-android
+          - abi: arm64-v8a
+            cpu: arm64
+            triple: aarch64-linux-android
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Android/Bionic TinyCC
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_NDK_HOME:?Ubuntu Android NDK must be available}"
+          BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          CC="$BIN/${{ matrix.triple }}29-clang"
+          AR="$BIN/llvm-ar"
+          test -x "$CC" && test -x "$AR"
+          git clone https://github.com/TinyCC/tinycc.git tools/tinycc-android
+          git -C tools/tinycc-android checkout --detach e23dabed154a8495f3ac1ff3cc9d04fa1c207893
+          mkdir -p build-android-${{ matrix.abi }}
+          cd tools/tinycc-android
+          ./configure --cpu="${{ matrix.cpu }}" --targetos=Android \
+            --cc="$CC" --ar="$AR" --prefix=/data/local/tmp/tcc
+          make -j2 tcc
+          cp tcc "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/tcc"
+          "$CC" -O2 -std=c11 -pthread \
+            "$GITHUB_WORKSPACE/tests/platform/android_smoke.c" \
+            -ldl -o "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/android_smoke"
+          "$BIN/llvm-readelf" -h tcc
+          "$BIN/llvm-readelf" -l tcc | grep -A2 INTERP
+          file "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/"*
+      - name: Upload Android ELF evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.abi }}-tcc
+          path: build-android-${{ matrix.abi }}/*
+          if-no-files-found: warn
