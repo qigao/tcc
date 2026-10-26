@@ -7,12 +7,14 @@ This repository is an **experimental, standalone C ABI / compiler qualification 
 | Experiment | Required behavior | Current admission |
 | --- | --- | --- |
 | Linux GCC/Clang + atomic32 | real four-worker RMW/CAS and publish/consume | locally exercised |
-| Linux TinyCC + external GAS atomic32 | same API and threaded tests | CI qualification required |
-| Windows llvm-mingw | Win32 handles, events, C ABI DLL | CI qualification required |
+| Linux TinyCC + external GAS atomic32 | same API and threaded tests | required x64 CI |
+| Windows llvm-mingw | Win32 handles, events, C ABI DLL | required x64 CI |
 | Windows TinyCC + `Interlocked` | same atomic32/thread client | real Win x64 runtime qualified |
 | TCC C client + llvm-mingw C DLL | `LoadLibrary`/`GetProcAddress`, values/ownership | required Windows x64 CI |
 | TCC C client + llvm-mingw C++/RATL DLL | RATL templates and BSTRs stay inside LLVM-built DLL | required Windows x64 sample |
 | `obfus.h` on Windows TinyCC | semantic parity to unobfuscated source, 2 seeds | required Windows x64 smoke |
+| C11-style thread facade | mutex, condition, join, TLS destructors, bounded queue | compiler matrix qualification |
+| Linux native AArch64 atomic32 | LDAR/STLR, LDAXR/STLXR and real 8-thread workload | native ARM64 CI qualification |
 | `obfuscator-llvm` pass | same program output with matching LLVM host plugin | opt-in; NOT bundled |
 
 `RATL` means *ReactOS Active Template Library*, a **Windows C++ ATL** implementation, **not** an atomic primitives library. TinyCC compiles C only: all RATL C++ objects stay behind an exported, version-checked C ABI. Windows and Linux platform backends are distinct and never silently fall back to plain volatile storage.
@@ -29,7 +31,11 @@ cmake --build build-gas
 ctest --test-dir build-gas --output-on-failure
 ```
 
-For TinyCC on native Linux x86-64 set `CMAKE_C_COMPILER` to your pinned `tcc` and `CMAKE_ASM_COMPILER=gcc`, then require `gas-x86_64`. The GAS backend consists of fixed-size 32-bit System V ABI operations; it does **not** pretend to implement generic `_Atomic(T)` or the entire C11 memory model.
+On Linux ARM64 use `-DPOC_ATOMIC_BACKEND=gas-aarch64` with a native AArch64 GAS assembler. Both the new thread contract and atomic tests run on actual ARM64 runners. For TinyCC on native Linux x86-64 set `CMAKE_C_COMPILER` to your pinned `tcc` and `CMAKE_ASM_COMPILER=gcc`, then require `gas-x86_64`. The GAS backend consists of fixed-size 32-bit System V ABI operations; it does **not** pretend to implement generic `_Atomic(T)` or the entire C11 memory model.
+
+## Thread facade scope
+
+`include/poc/threads.h` is an intentionally limited `pthread`/Win32 adapter, not a drop-in C11 `threads.h` or a stable public ABI. It provides create/join, mutex, condition-variable waits/broadcast, and destructor-backed thread-specific storage. The bounded FIFO test runs four producers, four consumers, 10,000 distinct payloads and a queue capacity of seven, then checks exact-once consumption, closing wakeups, rejected late writes, return values and exactly eight TLS destructor callbacks. Live thread, mutex, condition and TLS objects must never move or cross DLL/compiler boundaries. They must be destroyed or joined only by the owning test.
 
 ## Windows quick start
 

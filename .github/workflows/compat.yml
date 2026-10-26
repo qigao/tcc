@@ -38,6 +38,56 @@ jobs:
           cmake -S . -B build-tcc -G Ninja -DCMAKE_C_COMPILER="$GITHUB_WORKSPACE/tools/tcc-installed/bin/tcc" -DCMAKE_ASM_COMPILER=gcc -DPOC_ATOMIC_BACKEND=gas-x86_64
           cmake --build build-tcc --parallel 2
           ctest --test-dir build-tcc --repeat until-fail:5 --output-on-failure
+  linux-arm64-native:
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        backend: [gnu, gas-aarch64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native ARM64 compiler and atomic/thread runtime
+        run: |
+          test "$(uname -m)" = aarch64
+          cmake -S . -B build-arm -G Ninja -DCMAKE_C_COMPILER=${{ matrix.compiler }} -DCMAKE_ASM_COMPILER=gcc -DPOC_ATOMIC_BACKEND=${{ matrix.backend }}
+          cmake --build build-arm --parallel 2
+          ctest --test-dir build-arm --repeat until-fail:5 --output-on-failure
+  linux-arm64-tinycc:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned native ARM64 TinyCC source
+        run: |
+          test "$(uname -m)" = aarch64
+          git clone https://github.com/TinyCC/tinycc.git tools/tinycc
+          git -C tools/tinycc checkout --detach e23dabed154a8495f3ac1ff3cc9d04fa1c207893
+          cd tools/tinycc
+          ./configure --prefix="$GITHUB_WORKSPACE/tools/tcc-installed"
+          make -j2
+          make install
+      - name: Compile and run AArch64 GAS with actual TinyCC C clients
+        run: |
+          cmake -S . -B build-arm-tcc -G Ninja -DCMAKE_C_COMPILER="$GITHUB_WORKSPACE/tools/tcc-installed/bin/tcc" -DCMAKE_ASM_COMPILER=gcc -DPOC_ATOMIC_BACKEND=gas-aarch64
+          cmake --build build-arm-tcc --parallel 2
+          ctest --test-dir build-arm-tcc --repeat until-fail:5 --output-on-failure
+  linux-sanitizers:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            flags: -fsanitize=thread
+          - compiler: clang
+            flags: -fsanitize=address,undefined
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source-instrumented native atomic and thread tests
+        run: |
+          cmake -S . -B build-sanitize -G Ninja -DCMAKE_C_COMPILER=${{ matrix.compiler }} -DCMAKE_C_FLAGS="${{ matrix.flags }} -fno-omit-frame-pointer -g -O1" -DPOC_ATOMIC_BACKEND=gnu
+          cmake --build build-sanitize --parallel 2
+          ctest --test-dir build-sanitize --repeat until-fail:3 --output-on-failure
   windows-llvm:
     runs-on: windows-2022
     steps:

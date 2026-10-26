@@ -3,8 +3,8 @@
 ## Layering
 
 1. **Compiler:** upstream TinyCC for C; llvm-mingw/Clang for C/C++, Windows PE/COFF and resource compilation. No C++ parser or AST is added to TCC.
-2. **Platform:** POSIX `pthread`/Win32 `CreateThread` and events. Backends are concrete and fail compilation if unavailable.
-3. **Atomic32 storage:** a **separate** naturally aligned four-byte `poc_atomic32`. Linux x86-64 GAS (`lock xadd`, `cmpxchg`, `xchg`, TSO load); Windows `Interlocked*`; GCC/Clang `__atomic` baseline. All POC atomic operations are sequentially consistent. `volatile` alone is NOT synchronization.
+2. **Platform:** separate POSIX `pthread`/Win32 `CreateThread`, mutex, condition, and TLS destructor backends. Objects stay with their creating compiler and owner, never cross a DLL boundary.
+3. **Atomic32 storage:** a **separate** naturally aligned four-byte `poc_atomic32`. Linux x86-64 GAS (`lock xadd`, `cmpxchg`, `xchg`, TSO load); Linux AArch64 acquire/release exclusive instructions (`LDAR/STLR/LDAXR/STLXR`); Windows `Interlocked*`; GCC/Clang `__atomic` baseline. All POC atomic operations are sequentially consistent. `volatile` alone is NOT synchronization.
 4. **Consumers:** identical thread+CAS+publication C client for all atomic backends. Windows clients additionally test PE DLL exports, dynamic lookup, and a separate LLVM-mingw-built C++/RATL bridge. Obfuscation is isolated from ABI/concurrency qualification.
 
 This POC ABI is **not** binary compatible with `_Atomic`, `std::atomic` or Salts `SALTS_ATOMIC_TYPE`. No public Salts ABI is modified. Use a C ABI consisting only of fixed-width scalars, caller-provided arrays, explicit error codes, and specified calling conventions. Never pass STL types, C++ exceptions, `FILE*`, allocator-owned buffers, or CRT handles between compilers. The examples have no cross-boundary allocation.
@@ -20,10 +20,16 @@ This POC ABI is **not** binary compatible with `_Atomic`, `std::atomic` or Salts
 | Win32 wait/event/clock | N/A | N/A | required | required x64 |
 | C ABI DLL runtime | N/A | N/A | required | required x64 |
 | RATL C++ behind C export | N/A | N/A | required x64 sample | required x64 caller |
+| bounded FIFO / close / TLS destructors | required | required | required x64 | required x64 |
+| native AArch64 GAS | required native ARM64 | required native ARM64 | N/A | N/A |
 | obfus.h semantic parity | N/A | N/A | N/A | required x64 smoke |
 | LLVM plugin semantic parity | opt-in | N/A | opt-in matching plugin | N/A |
 
-A **passed compilation** does not establish ABI/layout, memory-order semantics, exception confinement, weak-memory portability, installed SDK correctness, or sanitizer coverage. In particular, native ASM is not automatically observable by TSan; run GCC/Clang source TSan/ASan/UBSan for separately implemented atomics and acquire/release handoffs. For Windows check both compile + **actual execution**; cross-compilation alone is insufficient. Before attempting ARM64, add a separate audited AArch64 assembly backend (or Win32 Interlocked where applicable) and run native hardware tests. Do not run x86 GAS on ARM64.
+A **passed compilation** does not establish ABI/layout, memory-order semantics, exception confinement, weak-memory portability, installed SDK correctness, or sanitizer coverage. In particular, native ASM is not automatically observable by TSan; run GCC/Clang source TSan/ASan/UBSan for separately implemented atomics and acquire/release handoffs. For Windows check both compile + **actual execution**; cross-compilation alone is insufficient. On AArch64 use only the separate ELF ABI backend and native ARM64 execution; on Windows ARM64 use Windows intrinsics and native hardware. x86 TSO results cannot substitute for AArch64 memory-model results. The new 32-bit assembly backend does not imply 8/16/64-bit atomics or arbitrary C11 `_Atomic` support.
+
+## Thread ownership
+
+The `poc_thread`, `poc_mutex`, `poc_condition` and `poc_tss` types are **private ABI test objects**. No fields may cross compilers or DSOs; callers zero-initialize the storage and keep its address stable. The callback result is published before successful join and read after join. Closing the queue holds its mutex and broadcasts to all waiters. Thread-specific destructor callbacks must run before the owner deletes its key, with Win32 FLS and POSIX pthread implementations independently exercised. Destroying with blocked waiters or racing writers remains invalid; later tests will add explicit busy-error policies rather than silently masking undefined lifetime.
 
 ## RATL and Windows C ABI
 
