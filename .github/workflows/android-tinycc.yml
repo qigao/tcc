@@ -59,3 +59,43 @@ jobs:
           name: android-${{ matrix.abi }}-tcc
           path: build-android-${{ matrix.abi }}/*
           if-no-files-found: warn
+
+  android-x86-emulator:
+    name: Android x86_64 emulator true TinyCC runtime
+    needs: android-tcc-cross
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-x86_64-tcc
+          path: build-android-x86_64
+      - name: Allow Android Emulator hardware virtualization
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          ls -l /dev/kvm
+      - name: Execute NDK/Bionic and real TCC on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-window -noaudio -no-boot-anim -gpu swiftshader_indirect -no-snapshot-load -no-snapshot-save
+          script: bash scripts/android-emulator-smoke.sh
+      - name: Upload Android native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-tcc-x86_64-evidence
+          path: |
+            build-android-x86_64/adb*.txt
+            build-android-x86_64/*.o
+            build-android-x86_64/android_tcc_consumer
+          if-no-files-found: warn
