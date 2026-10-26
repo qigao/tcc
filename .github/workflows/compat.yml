@@ -226,8 +226,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "WTL8 full Win64 header parse failed on $triple" }
           }
           Write-Host 'WTL8 frame/control/dialog headers x64 ARM64 parsing PASS'
-      - name: WTL4MinGW x64 control HWND and ARM64 DLL diagnostic
-        continue-on-error: true
+      - name: WTL4MinGW x64 controls and ARM64 cross DLL required runtime
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -371,6 +370,20 @@ jobs:
           Invoke-Checked $tccArm.FullName @('tests/atl_ports/client.c',
             '-o','build-arm64-win/wtl4mingw_client_arm64.exe')
           Assert-Arm64-PE 'build-arm64-win/wtl4mingw_client_arm64.exe'
+          Invoke-Checked $clangArmCpp @('-shared','-std=c++11','-O0',
+            '-include','algorithm','-fms-extensions',
+            '-D_WIN32_WINNT=0x0601','-DWINVER=0x0601','-D_WIN32_IE=0x0601',
+            '-Itools/wtl4mingw/atlport/include',
+            '-Itools/wtl4mingw/stdext/include',
+            '-Itools/wtl4mingw/wtl/include',
+            'tests/atl_ports/wtl4mingw_controls_bridge.cpp',
+            '-o','build-arm64-win/poc_wtl_controls_arm64.dll','-static',
+            '-lole32','-loleaut32','-lcomctl32','-lshlwapi',
+            '-luuid','-lgdi32','-luser32','-ladvapi32')
+          Assert-Arm64-PE 'build-arm64-win/poc_wtl_controls_arm64.dll'
+          Invoke-Checked $tccArm.FullName @('tests/atl_ports/client.c',
+            '-o','build-arm64-win/wtl_controls_client_arm64.exe')
+          Assert-Arm64-PE 'build-arm64-win/wtl_controls_client_arm64.exe'
           $manifest = @{}
           Get-ChildItem build-arm64-win -File | Where-Object {
             $_.Extension -in @('.exe', '.dll')
@@ -463,9 +476,10 @@ jobs:
             'atomic_small_tcc_arm64.exe',
             'atomic64_tcc_arm64.exe',
             'openatl_client_arm64.exe',
-            'wtl4mingw_client_arm64.exe'
+            'wtl4mingw_client_arm64.exe',
+            'wtl_controls_client_arm64.exe'
           )
-          $dlls = @('poc_atomic64_win.dll', 'poc_atomic64_badabi.dll', 'poc_openatl_arm64.dll', 'poc_wtl4mingw_arm64.dll')
+          $dlls = @('poc_atomic64_win.dll', 'poc_atomic64_badabi.dll', 'poc_openatl_arm64.dll', 'poc_wtl4mingw_arm64.dll', 'poc_wtl_controls_arm64.dll')
           foreach ($name in ($names + $dlls)) {
             $path = (Resolve-Path (Join-Path 'arm64-bin' $name)).Path
             [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
@@ -487,6 +501,8 @@ jobs:
                 & $path 'poc_openatl_arm64.dll'
               } elseif ($name -eq 'wtl4mingw_client_arm64.exe') {
                 & $path 'poc_wtl4mingw_arm64.dll'
+              } elseif ($name -eq 'wtl_controls_client_arm64.exe') {
+                & $path 'poc_wtl_controls_arm64.dll'
               } else {
                 & $path
               }
