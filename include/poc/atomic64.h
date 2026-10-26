@@ -34,6 +34,11 @@ void *poc_atomic_ptr_load(const poc_atomic_ptr *p);
 void poc_atomic_ptr_store(poc_atomic_ptr *p, void *v);
 void *poc_atomic_ptr_exchange(poc_atomic_ptr *p, void *v);
 int poc_atomic_ptr_compare_exchange(poc_atomic_ptr *p, void **expected, void *desired);
+#if defined(_WIN32) && defined(POC_ATOMIC64_EXTERNAL_DLL)
+/* Quiescent-only test entry points; fail closed on unbound operations. */
+int poc_atomic64_backend_init(const char *dll_path);
+int poc_atomic64_backend_shutdown(void);
+#endif
 #ifdef __cplusplus
 }
 #endif

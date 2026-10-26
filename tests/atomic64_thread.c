@@ -44,6 +44,11 @@ int main(void) {
     uint64_t before = UINT64_C(0x00000001ffffff00), expected;
     int a = 17, b = 23;
     void *p;
+#if defined(_WIN32) && defined(POC_ATOMIC64_EXTERNAL_DLL)
+    if (poc_atomic64_backend_init("missing-poc-atomic64.dll") != -1) return 21;
+    if (poc_atomic64_backend_init("poc_atomic64_win.dll") != 0) return 22;
+    if (poc_atomic64_backend_init("poc_atomic64_win.dll") != -1) return 23;
+#endif
     if (sizeof(poc_atomic64) != 8 || sizeof(poc_atomic_ptr) != 8) return 1;
     if (sizeof(void *) != 8 || ((uintptr_t)&counter & 7u) != 0) return 2;
     if (poc_atomic64_load(&counter) != before) return 3;
@@ -79,6 +84,10 @@ int main(void) {
         poc_atomic_ptr_store(&mailbox, NULL);
     }
     if (poc_thread_join(&publisher, &result) || result != 9 || err) return 20;
+#if defined(_WIN32) && defined(POC_ATOMIC64_EXTERNAL_DLL)
+    if (poc_atomic64_backend_shutdown() != 0) return 24;
+    if (poc_atomic64_backend_shutdown() != -1) return 25;
+#endif
     puts("atomic64/ptr: high-bit CAS/RMW, MPMC increment, pointer publication PASS");
     return 0;
 }
