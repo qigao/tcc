@@ -28,3 +28,10 @@ Linux and macOS independently cross-compile both PE variants. The
 original RATL source remains unchanged and is never mixed with OpenATL.
 No RATL ARM64 or production ATL deployment is qualified; no WTL8
 fallback or Salts production change is authorized.
+
+The expected native diagnostics now include the exact upstream HRESULT
+(`0x00000000`, i.e. `S_OK` despite stale descendants) and actual
+nested-tree state: `stale=1` for unchanged RATL and `stale=0` for the
+separate test-only fix. The test first observes real keys and asserts the
+result before printing these lines. Both baselines require a clean Git
+checkout of the source pin; accidental mutation is a hard error.

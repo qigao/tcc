@@ -12,6 +12,7 @@ test "$(git -C "$OPENATL" rev-parse HEAD)" = "$OPENPIN"
 git clone --quiet https://github.com/katahiromz/RATL.git "$RATL"
 git -C "$RATL" checkout --quiet --detach "$RATLPIN"
 test "$(git -C "$RATL" rev-parse HEAD)" = "$RATLPIN"
+git -C "$RATL" diff --quiet HEAD -- include/atl/statreg.h
 test -f "$RATL/include/atl/atlcom.h"
 test -f "$OPENATL/include/atlcom.h"
 

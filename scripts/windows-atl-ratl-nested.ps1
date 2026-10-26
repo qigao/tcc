@@ -9,6 +9,9 @@ Set-StrictMode -Version Latest
 $pin='2e2efa182d7c6ee9037454d23780991fb8543084'
 $sha=(git -C $RATLRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $sha -ne $pin) { throw "Original RATL HEAD mismatch $sha" }
+# Never mistake a previously modified working tree for genuine upstream.
+git -C $RATLRoot diff --quiet HEAD -- include/atl/statreg.h
+if ($LASTEXITCODE -ne 0) { throw 'Original RATL statreg.h checkout is modified' }
 
 $cpp=Join-Path $LLVMRoot 'x86_64-w64-mingw32-clang++.exe'
 if (!(Test-Path $cpp)) { throw 'Pinned x64 compiler missing' }
@@ -68,13 +71,18 @@ function Execute-Strict([string]$program,[string]$mode,[string]$expected) {
   if ($process.ExitCode -ne 0 -or $stdout -cne $expected -or $stderr) {
     throw "RATL P1-D mode=$mode code=$($process.ExitCode) expected=$expected actual=$stdout stderr=$stderr"
   }
+  if ($mode -like '*force' -or $mode -like '*delete') {
+    Write-Host "Verified original-vs-patched RATL: $stdout"
+  }
 }
 for($i=1;$i -le 5;++$i) {
   foreach($mode in @('nested','types','noremove','baseline-force','baseline-delete')) {
-    Execute-Strict $baseline $mode "RATL_P1D_OK mode=$mode"
+    $extra = if ($mode -like '*force' -or $mode -like '*delete') { ' hr=0x00000000 stale=1' } else { '' }
+    Execute-Strict $baseline $mode "RATL_P1D_OK mode=$mode$extra"
   }
   foreach($mode in @('nested','types','noremove','patched-force','patched-delete')) {
-    Execute-Strict $fixed $mode "RATL_P1D_OK mode=$mode"
+    $extra = if ($mode -like '*force' -or $mode -like '*delete') { ' hr=0x00000000 stale=0' } else { '' }
+    Execute-Strict $fixed $mode "RATL_P1D_OK mode=$mode$extra"
   }
 }
 Write-Host 'RATL P1-D original nested-delete BUG reproduced and exact-pinned test-only fix qualified 5/5'
