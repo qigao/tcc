@@ -65,9 +65,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows compile failed' }
           ctest --test-dir build-win --output-on-failure
           if ($LASTEXITCODE -ne 0) { throw 'Windows runtime tests failed' }
-      - name: Windows TinyCC, RATL and obfus.h diagnostic (non-gating)
+      - name: Windows TinyCC, RATL and obfus.h required runtime
         shell: pwsh
-        continue-on-error: true
         run: |
           $ErrorActionPreference = 'Stop'
           Invoke-WebRequest 'https://github.com/DosX-dev/TinyCC-builder/releases/download/2026-10-22/tinycc-windows-2026-10-22.zip' -OutFile tinycc.zip

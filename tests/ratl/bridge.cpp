@@ -6,6 +6,8 @@ extern "C" __declspec(dllexport) unsigned int __cdecl poc_ratl_abi_version(void)
 extern "C" __declspec(dllexport) int __cdecl poc_ratl_sum(const int *input, unsigned count) {
     if (!input || count > 16) return -1;
     try {
+        ATL::CComBSTR label(L"RATL");
+        if (label.Length() != 4u) return -6;
         ATL::CSimpleArray<int> items;
         int sum = 0;
         for (unsigned i = 0; i < count; ++i) {

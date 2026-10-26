@@ -9,10 +9,10 @@ This repository is an **experimental, standalone C ABI / compiler qualification 
 | Linux GCC/Clang + atomic32 | real four-worker RMW/CAS and publish/consume | locally exercised |
 | Linux TinyCC + external GAS atomic32 | same API and threaded tests | CI qualification required |
 | Windows llvm-mingw | Win32 handles, events, C ABI DLL | CI qualification required |
-| Windows TinyCC + `Interlocked` | same atomic32/thread client | diagnostic until real Windows run |
-| TCC C client + llvm-mingw C DLL | `LoadLibrary`/`GetProcAddress`, values/ownership | diagnostic |
-| TCC C client + llvm-mingw C++/RATL DLL | RATL templates do **not** go through TCC | diagnostic |
-| `obfus.h` on Windows TinyCC | semantic parity to unobfuscated source | opt-in diagnostic |
+| Windows TinyCC + `Interlocked` | same atomic32/thread client | real Win x64 runtime qualified |
+| TCC C client + llvm-mingw C DLL | `LoadLibrary`/`GetProcAddress`, values/ownership | required Windows x64 CI |
+| TCC C client + llvm-mingw C++/RATL DLL | RATL templates and BSTRs stay inside LLVM-built DLL | required Windows x64 sample |
+| `obfus.h` on Windows TinyCC | semantic parity to unobfuscated source, 2 seeds | required Windows x64 smoke |
 | `obfuscator-llvm` pass | same program output with matching LLVM host plugin | opt-in; NOT bundled |
 
 `RATL` means *ReactOS Active Template Library*, a **Windows C++ ATL** implementation, **not** an atomic primitives library. TinyCC compiles C only: all RATL C++ objects stay behind an exported, version-checked C ABI. Windows and Linux platform backends are distinct and never silently fall back to plain volatile storage.

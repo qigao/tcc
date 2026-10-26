@@ -24,11 +24,11 @@ try {
   Invoke-Checked $clang @('-shared', '-O0', "-I$inc", (Join-Path $root 'tests/bridge.c'), '-o', 'poc_bridge.dll')
   Invoke-Checked $TinyCCExe @("-I$inc", (Join-Path $root 'src/atomic/win_interlocked.c'),
     (Join-Path $root 'tests/atomic_thread.c'), '-o', 'atomic_thread_tcc.exe')
-  Invoke-Checked (Join-Path $bin 'atomic_thread_tcc.exe') @()
+  for ($i = 1; $i -le 5; ++$i) { Invoke-Checked (Join-Path $bin 'atomic_thread_tcc.exe') @() }
   Invoke-Checked $TinyCCExe @((Join-Path $root 'tests/win_api.c'), '-o', 'win_api_tcc.exe')
   Invoke-Checked (Join-Path $bin 'win_api_tcc.exe') @()
   Invoke-Checked $TinyCCExe @("-I$inc", (Join-Path $root 'tests/bridge_client.c'), '-o', 'bridge_client_tcc.exe')
-  Invoke-Checked (Join-Path $bin 'bridge_client_tcc.exe') @()
+  for ($i = 1; $i -le 5; ++$i) { Invoke-Checked (Join-Path $bin 'bridge_client_tcc.exe') @() }
   # llvm-mingw C++/RATL internals, exported stable C function only.
   $rinc = Join-Path $RATLRoot 'include/atl'
   $rcompat = Join-Path $RATLRoot 'compat'
@@ -39,16 +39,19 @@ try {
     (Join-Path $root 'tests/ratl/bridge.cpp'), '-o', 'poc_ratl_bridge.dll',
     '-static', '-lole32', '-loleaut32', '-luuid', '-lrpcrt4', '-lshlwapi', '-lgdi32', '-ladvapi32', '-lkernel32')
   Invoke-Checked $TinyCCExe @((Join-Path $root 'tests/ratl/client.c'), '-o', 'ratl_client_tcc.exe')
-  Invoke-Checked (Join-Path $bin 'ratl_client_tcc.exe') @()
+  for ($i = 1; $i -le 5; ++$i) { Invoke-Checked (Join-Path $bin 'ratl_client_tcc.exe') @() }
   # Optional deterministic semantic-only test; no anti-debug/fake signatures.
-  if (Test-Path $ObfusHeader) {
-    $obfinc = Split-Path -Parent $ObfusHeader
-    Invoke-Checked $TinyCCExe @((Join-Path $root 'tests/obfuscation/semantic_smoke.c'), '-o', 'obfus_plain.exe')
+  if (-not (Test-Path $ObfusHeader)) { throw 'Pinned obfus.h header missing' }
+  $obfinc = Split-Path -Parent $ObfusHeader
+  Invoke-Checked $TinyCCExe @((Join-Path $root 'tests/obfuscation/semantic_smoke.c'), '-o', 'obfus_plain.exe')
+  $plain = & (Join-Path $bin 'obfus_plain.exe'); if ($LASTEXITCODE -ne 0) { throw 'plain failed' }
+  foreach ($seed in @(0, 123456789)) {
     Invoke-Checked $TinyCCExe @("-I$obfinc", '-DPOC_ENABLE_OBFUS_H=1',
-      (Join-Path $root 'tests/obfuscation/semantic_smoke.c'), '-o', 'obfus_protected.exe')
-    $plain = & (Join-Path $bin 'obfus_plain.exe'); if ($LASTEXITCODE -ne 0) { throw 'plain failed' }
-    $protected = & (Join-Path $bin 'obfus_protected.exe'); if ($LASTEXITCODE -ne 0) { throw 'obfus failed' }
-    if ($plain -ne $protected) { throw 'obfuscation changed program output' }
-    Write-Host 'obfus.h semantic parity passed; no reverse-engineering assurance asserted'
+      "-DOBFH_SEED=${seed}u", (Join-Path $root 'tests/obfuscation/semantic_smoke.c'),
+      '-o', "obfus_protected_$seed.exe")
+    $protected = & (Join-Path $bin "obfus_protected_$seed.exe")
+    if ($LASTEXITCODE -ne 0) { throw "obfus seed $seed failed" }
+    if ($plain -ne $protected) { throw "obfuscation seed $seed changed program output" }
+    Write-Host "obfus.h seed $seed semantic parity PASS (no anti-debugging/fake signatures)"
   }
 } finally { Pop-Location }

@@ -17,10 +17,10 @@ This POC ABI is **not** binary compatible with `_Atomic`, `std::atomic` or Salts
 | atomic32 RMW, failed CAS expected | required | required | required | required |
 | four workers / exact increments | required | required | required | required |
 | release/acquire publication | required | required | required | required |
-| Win32 wait/event/clock | N/A | N/A | required | diagnostic |
-| C ABI DLL runtime | N/A | N/A | required | diagnostic |
-| RATL C++ behind C export | N/A | N/A | diagnostic | diagnostic caller |
-| obfus.h semantic parity | N/A | N/A | N/A | diagnostic |
+| Win32 wait/event/clock | N/A | N/A | required | required x64 |
+| C ABI DLL runtime | N/A | N/A | required | required x64 |
+| RATL C++ behind C export | N/A | N/A | required x64 sample | required x64 caller |
+| obfus.h semantic parity | N/A | N/A | N/A | required x64 smoke |
 | LLVM plugin semantic parity | opt-in | N/A | opt-in matching plugin | N/A |
 
 A **passed compilation** does not establish ABI/layout, memory-order semantics, exception confinement, weak-memory portability, installed SDK correctness, or sanitizer coverage. In particular, native ASM is not automatically observable by TSan; run GCC/Clang source TSan/ASan/UBSan for separately implemented atomics and acquire/release handoffs. For Windows check both compile + **actual execution**; cross-compilation alone is insufficient. Before attempting ARM64, add a separate audited AArch64 assembly backend (or Win32 Interlocked where applicable) and run native hardware tests. Do not run x86 GAS on ARM64.
@@ -38,5 +38,5 @@ Baseline and transformed variants must produce identical exit code and stdout ov
 1. Make the x86-64 TinyCC GAS workflow a mandatory job after exact pinned-version runtime evidence.
 2. Qualify llvm-mingw C/Win32 on actual Windows runner, including DLL load/unload.
 3. Diagnose RATL Clang/MinGW compatibility separately; keep legacy PSEH, resource and COM APIs within C++ DLL.
-4. Qualify a reproducible Windows TinyCC toolchain and compare `obfus.h`-protected/unprotected program semantics.
+4. Expand the now-required Windows TinyCC/RATL/obfus.h x64 smoke into x86 calling-convention, ownership, cleanup and deeper COM/ATL tests.
 5. Add layout/versioned ABI and native ARM64 ownership/cancellation stress tests before any downstream usage. Do not mark Salts TinyCC-ready based on these PoCs.
