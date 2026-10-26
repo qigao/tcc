@@ -171,4 +171,15 @@ s = change(s,
 s = change(s,
     "pThis->m_thunk.GetWNDPROC()", "pThis->m_thunk.GetWNDPROC()", 3)
 atlwin.write_text(s, encoding="utf-8")
-print("Winx ATL port: safe owner thunk + pointer-sized Win32 APIs applied")
+
+# The old Winx debug CRT shim assumes unsigned int == size_t and shadows
+# the modern MinGW CRT definition. On Win64, the first operator-new
+# argument must be size_t. Keep the exact x86 behavior unchanged.
+crtdbg = root / "stdext/include/stdext/msvc/crtdbg.h"
+s = crtdbg.read_text(encoding="utf-8")
+s = change(s, "operator new(unsigned int s, int, const char *, int)",
+           "operator new(size_t s, int, const char *, int)")
+s = change(s, "operator new(\n        unsigned int,\n        int,",
+           "operator new(\n        size_t,\n        int,")
+crtdbg.write_text(s, encoding="utf-8")
+print("Winx ATL port: W^X thunk, pointer-sized Win32 and size_t CRT applied")
