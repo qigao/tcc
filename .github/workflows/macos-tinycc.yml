@@ -1,0 +1,88 @@
+name: macOS native TinyCC Mach-O POC
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-macos:
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: true
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned native TinyCC
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          xcrun --show-sdk-path
+          git clone https://github.com/TinyCC/tinycc.git tools/tinycc
+          git -C tools/tinycc checkout --detach e23dabed154a8495f3ac1ff3cc9d04fa1c207893
+          cd tools/tinycc
+          ./configure --prefix="$GITHUB_WORKSPACE/tools/tcc-installed"
+          make -j2
+          make install
+          "$GITHUB_WORKSPACE/tools/tcc-installed/bin/tcc" -v
+      - name: True TinyCC Mach-O and native system runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          TCC="$GITHUB_WORKSPACE/tools/tcc-installed/bin/tcc"
+          mkdir -p build-macos
+          "$TCC" tests/platform/macos_smoke.c -o build-macos/macos_smoke
+          file build-macos/macos_smoke
+          file build-macos/macos_smoke | grep -q 'Mach-O 64-bit'
+          for i in 1 2 3 4 5; do ./build-macos/macos_smoke; done
+          "$TCC" -Iinclude src/threads/threads.c \
+            tests/thread_shutdown_overlap.c -o build-macos/thread_shutdown
+          for i in 1 2 3 4 5; do ./build-macos/thread_shutdown; done
+      - name: Apple Clang atomic dylib with TinyCC C consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          TCC="$GITHUB_WORKSPACE/tools/tcc-installed/bin/tcc"
+          clang -dynamiclib -O0 -Iinclude \
+            src/atomic/gnu_atomic.c src/atomic/gnu_atomic64.c \
+            src/atomic/gnu_atomic_small.c src/atomic/ptr64.c \
+            -o build-macos/libpoc_atomic_darwin.dylib
+          file build-macos/libpoc_atomic_darwin.dylib
+          "$TCC" -Iinclude src/threads/threads.c tests/atomic_thread.c \
+            -Lbuild-macos -lpoc_atomic_darwin -o build-macos/atomic32_test
+          "$TCC" -Iinclude src/threads/threads.c tests/atomic_small_thread.c \
+            -Lbuild-macos -lpoc_atomic_darwin -o build-macos/atomic_small_test
+          "$TCC" -Iinclude src/threads/threads.c tests/atomic64_thread.c \
+            -Lbuild-macos -lpoc_atomic_darwin -o build-macos/atomic64_test
+          "$TCC" -Iinclude src/threads/threads.c tests/thread_contract.c \
+            -Lbuild-macos -lpoc_atomic_darwin -o build-macos/thread_contract
+          export DYLD_LIBRARY_PATH="$PWD/build-macos${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+          for test in atomic32_test atomic_small_test atomic64_test thread_contract; do
+            for i in 1 2 3 4 5; do "./build-macos/$test"; done
+          done
+      - name: Save platform evidence
+        if: always()
+        shell: bash
+        run: |
+          {
+            uname -a
+            sw_vers
+            xcode-select -p
+            xcrun --show-sdk-path
+            test ! -f tools/tcc-installed/bin/tcc || file tools/tcc-installed/bin/tcc
+            find build-macos -maxdepth 1 -type f -exec file {} \; 2>/dev/null || true
+          } > macos-evidence.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-tcc-${{ matrix.arch }}-evidence
+          path: macos-evidence.txt
+          if-no-files-found: warn
