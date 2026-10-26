@@ -42,6 +42,9 @@ try {
     throw "WTL10 pinned git blob mismatch: $got"
   }
   $sha = (Get-FileHash "$OutDir/wtl10.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($sha -ne '13de5cd7ed41454b8f287e9bcc4525234c6ac8c85905e4d4fe1a0776709fd78f') {
+    throw "WTL10 official release SHA256 mismatch: $sha"
+  }
   Write-Host "WTL 10.0.10320 release SHA256=$sha, git-blob=$got"
   Expand-Archive "$OutDir/wtl10.zip" -DestinationPath tools/wtl10 -Force
   $header = Get-ChildItem tools/wtl10 -Recurse -File -Filter atlapp.h |
