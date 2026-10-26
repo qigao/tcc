@@ -122,6 +122,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           ./scripts/windows-atl-com-p1.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
           if ($LASTEXITCODE -ne 0) { throw 'OpenATL COM P1 native x64 runtime failed' }
+      - name: OpenATL COM P1-B automatic object map and failure rollback x64/ARM64 (required)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/windows-atl-com-p1b.ps1 -LLVMRoot $env:LLVM_MINGW_BIN -OpenATLRoot 'tools/wtl10-openatl'
+          if ($LASTEXITCODE -ne 0) { throw 'OpenATL P1-B object map x64 runtime failed' }
       - name: Independent RATL COM P1 reference x64 native (required)
         shell: pwsh
         run: |
@@ -139,6 +145,7 @@ jobs:
             build-wtl10/wtl10_gui_runtime_aarch64.exe
             build-wtl10/atl_com_openatl_arm64.exe
             build-wtl10/atl_com_p1_openatl_arm64.exe
+            build-wtl10/atl_com_p1b_openatl_arm64.exe
             build-wtl10/manifest.json
           if-no-files-found: error
 
@@ -159,7 +166,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -ne 'Arm64') { throw 'Native Windows ARM64 runner required' }
           $manifest = Get-Content wtl10-arm64/manifest.json -Raw | ConvertFrom-Json -AsHashtable
-          foreach ($filename in @('poc_openatl_wtl10_arm64.dll','wtl10_client_arm64.exe','wtl10_gui_runtime_aarch64.exe','atl_com_openatl_arm64.exe','atl_com_p1_openatl_arm64.exe')) {
+          foreach ($filename in @('poc_openatl_wtl10_arm64.dll','wtl10_client_arm64.exe','wtl10_gui_runtime_aarch64.exe','atl_com_openatl_arm64.exe','atl_com_p1_openatl_arm64.exe','atl_com_p1b_openatl_arm64.exe')) {
             $path = (Resolve-Path "wtl10-arm64/$filename").Path
             [byte[]]$raw = [IO.File]::ReadAllBytes($path)
             if ($raw.Length -lt 128) { throw "Tiny PE: $filename" }
@@ -200,5 +207,15 @@ jobs:
             }
           }
           Write-Host 'Native ARM64 OpenATL COM P1 factory/rollback/class-object activation 5/5 PASS'
+          $expectedP1B = 'ATL_COM_P1B_OK map=2 rollback=1 activation=2 revoke=1 wrongthread=1 registry=0'
+          for ($i = 1; $i -le 5; $i++) {
+            $out = @(& ./wtl10-arm64/atl_com_p1b_openatl_arm64.exe 2>&1)
+            $rc = $LASTEXITCODE
+            $actual = ($out | ForEach-Object { "$_".Trim() }) -join ''
+            if ($rc -ne 0 -or $actual -cne $expectedP1B) {
+              throw "Native ARM64 OpenATL COM P1-B failed run $i exit=$($rc): $actual"
+            }
+          }
+          Write-Host 'Native ARM64 OpenATL COM P1-B two-TU map and atomic rollback 5/5 PASS'
           Write-Host 'Native ARM64 WTL10 hidden-window/dialog and RX thunk runtime 5/5 PASS'
           Write-Host 'Native Windows ARM64 WTL10/OpenATL/TinyCC C ABI 5/5 PASS'
