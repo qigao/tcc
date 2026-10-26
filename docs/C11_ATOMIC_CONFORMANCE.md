@@ -36,6 +36,10 @@ not the experimental `poc_atomic*` storage ABI. Tracked by
 - Cross-compiler `_Atomic` / `mtx_t` binary layout and ABI. A
   versioned fixed-width C ABI is mandatory for any DLL bridge.
 - Complete `<threads.h>` interface (M2) and installed consumer SDK (M4).
+- Windows i686 and actual Windows ARM64 run additional llvm-mingw Clang
+  scalar/publication C11 fixtures. The matching TinyCC drivers instead
+  execute mandatory native capability-denial checks with real PE machine
+  verification and SHA-256 provenance on ARM64.
 - GCC/Clang source TSan does not instrument TinyCC-generated atomics or
   the separately assembled GAS backend. Results must remain separate.
 

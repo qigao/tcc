@@ -231,6 +231,22 @@ jobs:
             'src/threads/threads.c', 'tests/atomic64_thread.c',
             '-o', 'build-arm64-win/atomic64_tcc_arm64.exe')
           Assert-Arm64-PE 'build-arm64-win/atomic64_tcc_arm64.exe'
+          # Native C11 compiler semantics: Clang is qualified; pinned
+          # TinyCC ARM64 reports NO_ATOMICS and must not be misrepresented.
+          Invoke-Checked $clangArm @('-std=c11', '-O2',
+            'tests/c11/atomic_scalar.c',
+            '-o', 'build-arm64-win/c11_atomic_scalar_llvm_arm64.exe')
+          Invoke-Checked $clangArm @('-std=c11', '-O2', '-Iinclude',
+            'src/threads/threads.c', 'tests/c11/atomic_concurrent.c',
+            '-o', 'build-arm64-win/c11_atomic_concurrent_llvm_arm64.exe')
+          Invoke-Checked $tccArm.FullName @('-std=c11',
+            'tests/c11/expect_no_atomics.c',
+            '-o', 'build-arm64-win/c11_no_atomics_tcc_arm64.exe')
+          foreach ($name in @('c11_atomic_scalar_llvm_arm64.exe',
+                               'c11_atomic_concurrent_llvm_arm64.exe',
+                               'c11_no_atomics_tcc_arm64.exe')) {
+            Assert-Arm64-PE "build-arm64-win/$name"
+          }
           $manifest = @{}
           Get-ChildItem build-arm64-win -File | Where-Object {
             $_.Extension -in @('.exe', '.dll')
@@ -272,6 +288,15 @@ jobs:
           Invoke-Checked $tcc32.FullName @("-I$inc",
             'src/atomic/win_x86_dll_client.c', 'src/threads/threads.c',
             'tests/win_x86/atomic64_test.c', '-o', 'build-x86/atomic64_tcc_x86.exe')
+          # True native i686 Clang standard atomic behavior versus
+          # TinyCC's explicit unsupported standard capability.
+          Invoke-Checked $clang32 @('-std=c11', '-O2',
+            'tests/c11/atomic_scalar.c', '-o', 'build-x86/c11_atomic_scalar_llvm_x86.exe')
+          Invoke-Checked $clang32 @('-std=c11', '-O2', "-I$inc",
+            'src/threads/threads.c', 'tests/c11/atomic_concurrent.c',
+            '-o', 'build-x86/c11_atomic_concurrent_llvm_x86.exe')
+          Invoke-Checked $tcc32.FullName @('-std=c11',
+            'tests/c11/expect_no_atomics.c', '-o', 'build-x86/c11_no_atomics_tcc_x86.exe')
           Invoke-Checked $tcc32.FullName @('tests/win_x86/abi_client.c', '-o', 'build-x86/abi_client_tcc.exe')
           Invoke-Checked $tcc32.FullName @("-I$inc", 'src/atomic/win_interlocked.c',
             'tests/atomic_thread.c', '-o', 'build-x86/atomic_thread_tcc_x86.exe')
@@ -285,6 +310,9 @@ jobs:
             foreach ($name in @('abi_client_tcc.exe', 'atomic_thread_tcc_x86.exe',
                                 'atomic_small_tcc_x86.exe', 'atomic_ptr32_tcc_x86.exe',
                                 'atomic64_tcc_x86.exe',
+                                'c11_atomic_scalar_llvm_x86.exe',
+                                'c11_atomic_concurrent_llvm_x86.exe',
+                                'c11_no_atomics_tcc_x86.exe',
                                 'thread_contract_tcc_x86.exe', 'thread_shutdown_overlap_tcc_x86.exe')) {
               $repetitions = if ($name -like 'thread_*') { 20 } else { 10 }
               for ($i = 0; $i -lt $repetitions; ++$i) {
@@ -321,7 +349,10 @@ jobs:
             'atomic_thread_llvm_arm64.exe',
             'thread_contract_llvm_arm64.exe',
             'atomic_small_tcc_arm64.exe',
-            'atomic64_tcc_arm64.exe'
+            'atomic64_tcc_arm64.exe',
+            'c11_atomic_scalar_llvm_arm64.exe',
+            'c11_atomic_concurrent_llvm_arm64.exe',
+            'c11_no_atomics_tcc_arm64.exe'
           )
           $dlls = @('poc_atomic64_win.dll', 'poc_atomic64_badabi.dll')
           foreach ($name in ($names + $dlls)) {
