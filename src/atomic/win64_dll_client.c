@@ -66,7 +66,7 @@ int poc_atomic64_backend_init(const char *path) {
     store_fn store;
     rmw_fn exchange, add;
     cas_fn cas;
-    small_fn small;
+    small_fn small_handler;
     if (!path || InterlockedCompareExchange(&g_admission, MUTATING, EMPTY) != EMPTY)
         return -1;
     candidate = LoadLibraryA(path);
@@ -81,10 +81,10 @@ int poc_atomic64_backend_init(const char *path) {
     exchange = (rmw_fn)GetProcAddress(candidate, "poc_win64_exchange");
     add = (rmw_fn)GetProcAddress(candidate, "poc_win64_fetch_add");
     cas = (cas_fn)GetProcAddress(candidate, "poc_win64_compare_exchange");
-    small = (small_fn)GetProcAddress(candidate, "poc_win_small_dispatch");
+    small_handler = (small_fn)GetProcAddress(candidate, "poc_win_small_dispatch");
     if (!version || version() != 2u || !storage || storage() != 8u ||
         sizeof(poc_atomic64) != 8u || !load || !store || !exchange ||
-        !add || !cas || !small ||
+        !add || !cas || !small_handler ||
         sizeof(poc_atomic8) != 1u || sizeof(poc_atomic16) != 2u) {
         FreeLibrary(candidate);
         InterlockedExchange(&g_admission, EMPTY);
@@ -96,7 +96,7 @@ int poc_atomic64_backend_init(const char *path) {
     g_exchange = exchange;
     g_add = add;
     g_cas = cas;
-    g_small = small;
+    g_small = small_handler;
     ++g_generation;
     if (g_generation == 0u) ++g_generation;
     InterlockedExchange(&g_admission, READY);
