@@ -52,3 +52,15 @@ overwritten record, missing old branch, or cleanup failure rejects CI.
 All native x64 tests run five times; Linux/macOS cross-compile a separate
 injected PE. This is NOT production qualification for arbitrary ACL
 failures or concurrent registry mutation.
+
+### Artifact and licensing separation
+
+The Linux/macOS CI still **requires** genuine PE compilation for original,
+test-patched and injected RATL reference programs. Those executables may
+contain RATL LGPL/GPL header implementation and **must not be packaged as
+WTL/OpenATL product/SDK artifacts**. The cross-host upload action explicitly
+excludes `atl_com_ratl_*.exe`, `atl_com_p1_ratl_*.exe`,
+`atl_ratl_registry_ref_*.exe` and `ratl_nested_*.exe` while retaining
+required CI logs and OpenATL/WTL10 PE evidence. The Windows ARM64 artifact
+already contains only OpenATL/WTL10 binaries. This does not replace a
+separate license assessment if anyone later distributes RATL test binaries.

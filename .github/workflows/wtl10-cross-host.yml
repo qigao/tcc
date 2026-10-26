@@ -38,12 +38,19 @@ jobs:
       - name: ATL COM P0 OpenATL/RATL x64 and OpenATL ARM64 PE cross-build (required)
         shell: bash
         run: bash scripts/atl-com-cross-host.sh
-      - uses: actions/upload-artifact@v4
+      # RATL reference executables may embed LGPL/GPL header implementation.
+      # Required compile/PE tests remain enabled but binaries are NOT SDK artifacts.
+      - name: Upload OpenATL/WTL10 builds (exclude RATL test EXEs)
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: wtl10-cross-${{ matrix.host }}
           path: |
             build-wtl10-host/*.dll
             build-wtl10-host/*.exe
+            !build-wtl10-host/atl_com_ratl_*.exe
+            !build-wtl10-host/atl_com_p1_ratl_*.exe
+            !build-wtl10-host/atl_ratl_registry_ref_*.exe
+            !build-wtl10-host/ratl_nested_*.exe
             build-wtl10-host/*.res.o
           if-no-files-found: error
