@@ -590,9 +590,7 @@ jobs:
             $digest = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($digest -ne $manifest[$name]) { throw "Artifact digest mismatch: $name" }
             for ($i = 0; $i -lt 10; ++$i) {
-              if ($name -match '^obfh_upstream_static_(even|odd)\.exe
-          }
-) {
+              if ($name -eq 'obfh_upstream_static_even.exe' -or $name -eq 'obfh_upstream_static_odd.exe') {
                 # Require a live image-base delta, actual DIR64 relocation
                 # application and loader-registered .pdata function entry.
                 # A file header or merely running the EXE is NOT sufficient.
