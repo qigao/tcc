@@ -12,6 +12,13 @@ This POC includes 32-bit modulo arithmetic, two seed-selected reversible instruc
 
 **Explicitly unsupported:** complete upstream `obfus.h` macros and automatic keyword rewriting; native x86 call/return/stack proxies; `HIDE_STRING(str)` source compatibility; VM dispatcher virtualization; anti-debugging, trap instructions, fake sections, Windows unwind metadata, CFG, BTI/PAC, signed binaries, and ARM32. The small test is **not** a measure of resistance to reverse engineering. Seed values are public layout selectors, not cryptographic keys. Never use this demo to protect real secrets.
 
+## First public source-signature slice: bitwise `VM_*`
+
+`obfh_arm64_vm_bits.h` is an **opt-in** header separate from the original `DosX-dev/obfus.h`. It exposes exactly six source-compatible macro signatures: `VM_AND`, `VM_OR`, `VM_XOR`, `VM_NOT`, `VM_SHL`, `VM_SHR`. They return `unsigned int`, evaluate each operand once, implement 32-bit unsigned bit patterns, and mask variable shift counts modulo 32 to match upstream region 14. Their bodies use genuine AArch64 `AND/ORR/EOR/LSL/LSR` instructions; `VM_AND` also has two seed-selected reversible instruction sequences.
+
+This is **source-level/semantic parity only**. Upstream's `VM_*` macros route via an encoded VM instruction program, whereas this experimental implementation executes ISA operations directly. It must not be described as VM virtualization, full binary obfuscation parity, or a replacement for the original header. All other `VM_*` names, automatic keyword interception and full `HIDE_STRING(str)` remain unported and unexposed.
+
+`vm_bits.c` is a separate native executable that reproduces upstream [`tests/vm.c`](https://github.com/DosX-dev/obfus.h/blob/main/tests/vm.c)'s bitwise type, evaluation-count and shift semantics. It tests 49 boundary-value pairs, 4,000 deterministic pseudo-random pairs, nested calls and side effects. Linux native GCC/Clang/TinyCC and real Windows ARM64 compile and execute both seed variants; Windows checks `0xAA64` and exact SHA-256 before running.
 ## Native acceptance, not just cross-compile
 
 Run on **actual AArch64 hardware** with GCC, Clang, or pinned TinyCC:
