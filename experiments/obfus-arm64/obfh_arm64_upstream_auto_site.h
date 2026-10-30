@@ -223,23 +223,23 @@
                    (size_t)NAME##_length*sizeof(uint32_t), \
                    "Original VM source site physical array size mismatch")
 
-/* A global named site has one static const pointer to an immutable compound
- * array of exact length in static storage (which is not a 15-word pool).
+/* Original VM_EXEC gets its source metadata as integral constants. That
+ * portion is legal at file scope, without constructing any code object.
  */
-#define OBFH_AC_DECLARE_STATIC(NAME,OP) \
+#define OBFH_AC_DECLARE_META(NAME,OP) \
     OBFH_AS_META(NAME,OP); \
-    OBFH_AC_ASSERT_LENGTH(NAME); \
-    static const uint32_t *const NAME##_words = OBFH_AC_PROGRAM(NAME)
+    OBFH_AC_ASSERT_LENGTH(NAME)
 
-/* Original VM_* statement expressions are inside functions. Compound literal
- * arrays there have block storage duration, as in the upstream implementation;
- * they are const and source words are fixed at compilation. A static pointer
- * to a block-duration compound literal would be INVALID C, so do not pretend
- * this is an object with static duration.
+/* The selected exact-size const compound literal has block duration when
+ * expanded inside the upstream GNU statement expression. TinyCC accepts this
+ * original-standard constructor but rejects a static pointer initialized
+ * from __builtin_choose_expr at file scope. NO 15-word fallback is allowed.
+ *
+ * For file-scope immutable arrays use the already qualified explicit
+ * OBFH_SC_DECLARE_0..7 which create static const arrays of exact length.
  */
 #define OBFH_AC_DECLARE_EXPR(NAME,OP) \
-    OBFH_AS_META(NAME,OP); \
-    OBFH_AC_ASSERT_LENGTH(NAME); \
+    OBFH_AC_DECLARE_META(NAME,OP); \
     const uint32_t *const NAME##_words = OBFH_AC_PROGRAM(NAME)
 
 #endif

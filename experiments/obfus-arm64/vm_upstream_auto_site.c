@@ -11,10 +11,10 @@
 #include "obfh_arm64_upstream_auto_site.h"
 
 enum { counter_before=__COUNTER__ };
-OBFH_AC_DECLARE_STATIC(auto_add,UOP_ADD);
-OBFH_AC_DECLARE_STATIC(auto_xor,UOP_BXOR);
-OBFH_AC_DECLARE_STATIC(auto_cmp,UOP_EQ);
-OBFH_AC_DECLARE_STATIC(auto_truth,UOP_TRUTH);
+OBFH_AC_DECLARE_META(auto_add,UOP_ADD);
+OBFH_AC_DECLARE_META(auto_xor,UOP_BXOR);
+OBFH_AC_DECLARE_META(auto_cmp,UOP_EQ);
+OBFH_AC_DECLARE_META(auto_truth,UOP_TRUTH);
 enum { counter_after=__COUNTER__ };
 /* The first failing TinyCC seed produced exactly this high-bit key:
  * the source VM owns uint32_t key; enum sign-extension before %3 must
@@ -40,22 +40,6 @@ typedef char obfh_auto_typecheck[
                   (long double*)0,(uint32_t*)0,(obfh_uprt_trace*)0)),
       enum obfh_uprt_status) ? 1 : -1];
 
-static const obfh_sc_descriptor sites[] = {
-    OBFH_SC_DESCRIPTOR(auto_add),
-    OBFH_SC_DESCRIPTOR(auto_xor),
-    OBFH_SC_DESCRIPTOR(auto_cmp),
-    OBFH_SC_DESCRIPTOR(auto_truth)
-};
-/* Unlike the previous padded 15-word object, sizeof the selected compound
- * array yields its ACTUAL physical storage bytes per distinct source site.
- * The reference builder supplies an independent expected length. */
-static const size_t site_storage_bytes[] = {
-    sizeof(OBFH_AC_PROGRAM(auto_add)),
-    sizeof(OBFH_AC_PROGRAM(auto_xor)),
-    sizeof(OBFH_AC_PROGRAM(auto_cmp)),
-    sizeof(OBFH_AC_PROGRAM(auto_truth))
-};
-
 /* All EIGHT original template types are compiled through the compact
  * selection, not merely the four automatically keyed site samples.
  * Distinct layouts and high-bit keys catch signed enum shift regressions.
@@ -66,58 +50,29 @@ static const size_t site_storage_bytes[] = {
      ((UINT32_C(0x00abc123) ^ ((uint32_t)(V)*UINT32_C(0x11321))) & \
         UINT32_C(0x00ffffff)))
 OBFH_SC_META(fixed_compact_0,OBFH_SEED,OBFH_FIXED_KEY(0u,0u),UOP_ADD,0u,4u);
-static const uint32_t *const fixed_compact_0_words=OBFH_AC_PROGRAM(fixed_compact_0);
 _Static_assert(sizeof(OBFH_AC_PROGRAM(fixed_compact_0))==4u*sizeof(uint32_t),
                "Source-selected variant 0 physical length differs");
 OBFH_SC_META(fixed_compact_1,OBFH_SEED,OBFH_FIXED_KEY(1u,1u),UOP_SUB,1u,6u);
-static const uint32_t *const fixed_compact_1_words=OBFH_AC_PROGRAM(fixed_compact_1);
 _Static_assert(sizeof(OBFH_AC_PROGRAM(fixed_compact_1))==6u*sizeof(uint32_t),
                "Source-selected variant 1 physical length differs");
 OBFH_SC_META(fixed_compact_2,OBFH_SEED,OBFH_FIXED_KEY(2u,2u),UOP_MUL,2u,11u);
-static const uint32_t *const fixed_compact_2_words=OBFH_AC_PROGRAM(fixed_compact_2);
 _Static_assert(sizeof(OBFH_AC_PROGRAM(fixed_compact_2))==11u*sizeof(uint32_t),
                "Source-selected variant 2 physical length differs");
 OBFH_SC_META(fixed_compact_3,OBFH_SEED,OBFH_FIXED_KEY(3u,3u),UOP_EQ,3u,10u);
-static const uint32_t *const fixed_compact_3_words=OBFH_AC_PROGRAM(fixed_compact_3);
 _Static_assert(sizeof(OBFH_AC_PROGRAM(fixed_compact_3))==10u*sizeof(uint32_t),
                "Source-selected variant 3 physical length differs");
 OBFH_SC_META(fixed_compact_4,OBFH_SEED,OBFH_FIXED_KEY(4u,0u),UOP_TRUTH,4u,12u);
-static const uint32_t *const fixed_compact_4_words=OBFH_AC_PROGRAM(fixed_compact_4);
 _Static_assert(sizeof(OBFH_AC_PROGRAM(fixed_compact_4))==12u*sizeof(uint32_t),
                "Source-selected variant 4 physical length differs");
 OBFH_SC_META(fixed_compact_5,OBFH_SEED,OBFH_FIXED_KEY(5u,1u),UOP_BAND,5u,11u);
-static const uint32_t *const fixed_compact_5_words=OBFH_AC_PROGRAM(fixed_compact_5);
 _Static_assert(sizeof(OBFH_AC_PROGRAM(fixed_compact_5))==11u*sizeof(uint32_t),
                "Source-selected variant 5 physical length differs");
 OBFH_SC_META(fixed_compact_6,OBFH_SEED,OBFH_FIXED_KEY(6u,2u),UOP_BXOR,6u,8u);
-static const uint32_t *const fixed_compact_6_words=OBFH_AC_PROGRAM(fixed_compact_6);
 _Static_assert(sizeof(OBFH_AC_PROGRAM(fixed_compact_6))==8u*sizeof(uint32_t),
                "Source-selected variant 6 physical length differs");
 OBFH_SC_META(fixed_compact_7,OBFH_SEED,OBFH_FIXED_KEY(7u,3u),UOP_BSHL,7u,15u);
-static const uint32_t *const fixed_compact_7_words=OBFH_AC_PROGRAM(fixed_compact_7);
 _Static_assert(sizeof(OBFH_AC_PROGRAM(fixed_compact_7))==15u*sizeof(uint32_t),
                "Source-selected variant 7 physical length differs");
-
-static const obfh_sc_descriptor compact_profiles[8] = {
-    OBFH_SC_DESCRIPTOR(fixed_compact_0),
-    OBFH_SC_DESCRIPTOR(fixed_compact_1),
-    OBFH_SC_DESCRIPTOR(fixed_compact_2),
-    OBFH_SC_DESCRIPTOR(fixed_compact_3),
-    OBFH_SC_DESCRIPTOR(fixed_compact_4),
-    OBFH_SC_DESCRIPTOR(fixed_compact_5),
-    OBFH_SC_DESCRIPTOR(fixed_compact_6),
-    OBFH_SC_DESCRIPTOR(fixed_compact_7)
-};
-static const size_t compact_storage_bytes[8] = {
-    sizeof(OBFH_AC_PROGRAM(fixed_compact_0)),
-    sizeof(OBFH_AC_PROGRAM(fixed_compact_1)),
-    sizeof(OBFH_AC_PROGRAM(fixed_compact_2)),
-    sizeof(OBFH_AC_PROGRAM(fixed_compact_3)),
-    sizeof(OBFH_AC_PROGRAM(fixed_compact_4)),
-    sizeof(OBFH_AC_PROGRAM(fixed_compact_5)),
-    sizeof(OBFH_AC_PROGRAM(fixed_compact_6)),
-    sizeof(OBFH_AC_PROGRAM(fixed_compact_7))
-};
 
 static uint32_t independently_derived_key(uint32_t site,uint32_t line,
                                           uint32_t seed) {
@@ -133,7 +88,8 @@ static uint32_t independently_derived_key(uint32_t site,uint32_t line,
     return (input^(input>>16u))*UINT32_C(2246822507);
 }
 static int compare_site(const obfh_sc_descriptor *s,
-                        unsigned int id,unsigned int site,unsigned int line) {
+                        unsigned int id,unsigned int site,unsigned int line,
+                        size_t storage_bytes) {
     upstream_test_program dynamic;
     unsigned int i,k,slot;
     uint32_t key=independently_derived_key(site,line,s->seed);
@@ -161,9 +117,9 @@ static int compare_site(const obfh_sc_descriptor *s,
             return 13;
         }
     }
-    if (site_storage_bytes[id]!=s->length*sizeof(uint32_t)) {
+    if (storage_bytes!=s->length*sizeof(uint32_t)) {
         fprintf(stderr,"UPAUTO_STORAGE_MISMATCH site=%u bytes=%u required=%u\n",
-            id,(unsigned int)site_storage_bytes[id],
+            id,(unsigned int)storage_bytes,
             (unsigned int)(s->length*sizeof(uint32_t)));
         return 14;
     }
@@ -192,6 +148,36 @@ static int compare_site(const obfh_sc_descriptor *s,
     return 0;
 }
 static int compact_variants_contract(void) {
+    const uint32_t *const fixed_compact_0_words=OBFH_AC_PROGRAM(fixed_compact_0);
+    const uint32_t *const fixed_compact_1_words=OBFH_AC_PROGRAM(fixed_compact_1);
+    const uint32_t *const fixed_compact_2_words=OBFH_AC_PROGRAM(fixed_compact_2);
+    const uint32_t *const fixed_compact_3_words=OBFH_AC_PROGRAM(fixed_compact_3);
+    const uint32_t *const fixed_compact_4_words=OBFH_AC_PROGRAM(fixed_compact_4);
+    const uint32_t *const fixed_compact_5_words=OBFH_AC_PROGRAM(fixed_compact_5);
+    const uint32_t *const fixed_compact_6_words=OBFH_AC_PROGRAM(fixed_compact_6);
+    const uint32_t *const fixed_compact_7_words=OBFH_AC_PROGRAM(fixed_compact_7);
+    const obfh_sc_descriptor compact_profiles[8] = {
+        OBFH_SC_DESCRIPTOR(fixed_compact_0),
+        OBFH_SC_DESCRIPTOR(fixed_compact_1),
+        OBFH_SC_DESCRIPTOR(fixed_compact_2),
+        OBFH_SC_DESCRIPTOR(fixed_compact_3),
+        OBFH_SC_DESCRIPTOR(fixed_compact_4),
+        OBFH_SC_DESCRIPTOR(fixed_compact_5),
+        OBFH_SC_DESCRIPTOR(fixed_compact_6),
+        OBFH_SC_DESCRIPTOR(fixed_compact_7)
+    };
+    const size_t compact_storage_bytes[8] = {
+        sizeof(OBFH_AC_PROGRAM(fixed_compact_0)),
+        sizeof(OBFH_AC_PROGRAM(fixed_compact_1)),
+        sizeof(OBFH_AC_PROGRAM(fixed_compact_2)),
+        sizeof(OBFH_AC_PROGRAM(fixed_compact_3)),
+        sizeof(OBFH_AC_PROGRAM(fixed_compact_4)),
+        sizeof(OBFH_AC_PROGRAM(fixed_compact_5)),
+        sizeof(OBFH_AC_PROGRAM(fixed_compact_6)),
+        sizeof(OBFH_AC_PROGRAM(fixed_compact_7))
+    };
+
+
     unsigned int i;
     for(i=0u;i<8u;++i) {
         const obfh_sc_descriptor *p=&compact_profiles[i];
@@ -210,6 +196,27 @@ static int compact_variants_contract(void) {
 }
 
 static int source_key_matrix(void) {
+    const uint32_t *const auto_add_words=OBFH_AC_PROGRAM(auto_add);
+    const uint32_t *const auto_xor_words=OBFH_AC_PROGRAM(auto_xor);
+    const uint32_t *const auto_cmp_words=OBFH_AC_PROGRAM(auto_cmp);
+    const uint32_t *const auto_truth_words=OBFH_AC_PROGRAM(auto_truth);
+    const obfh_sc_descriptor sites[] = {
+        OBFH_SC_DESCRIPTOR(auto_add),
+        OBFH_SC_DESCRIPTOR(auto_xor),
+        OBFH_SC_DESCRIPTOR(auto_cmp),
+        OBFH_SC_DESCRIPTOR(auto_truth)
+    };
+    /* Unlike the previous padded 15-word object, sizeof the selected compound
+     * array yields its ACTUAL physical storage bytes per distinct source site.
+     * The reference builder supplies an independent expected length. */
+    const size_t site_storage_bytes[] = {
+        sizeof(OBFH_AC_PROGRAM(auto_add)),
+        sizeof(OBFH_AC_PROGRAM(auto_xor)),
+        sizeof(OBFH_AC_PROGRAM(auto_cmp)),
+        sizeof(OBFH_AC_PROGRAM(auto_truth))
+    };
+
+
     const unsigned int counter[4]={
         auto_add_site,auto_xor_site,auto_cmp_site,auto_truth_site};
     const unsigned int line[4]={
@@ -218,7 +225,7 @@ static int source_key_matrix(void) {
     int result;
     for(i=0u;i<4u;++i) {
         if(i && counter[i]!=counter[i-1]+4u) return 20;
-        result=compare_site(&sites[i],i,counter[i],line[i]);
+        result=compare_site(&sites[i],i,counter[i],line[i],site_storage_bytes[i]);
         if(result) return result;
     }
     if(sites[0].key==sites[1].key ||
@@ -227,6 +234,7 @@ static int source_key_matrix(void) {
     return 0;
 }
 static int argument_single_evaluation(void) {
+    const uint32_t *const auto_add_words=OBFH_AC_PROGRAM(auto_add);
     unsigned int a=0u,b=0u,f=0u,n=0u;
     long double result=-777.0L;
     uint32_t steps=0u;

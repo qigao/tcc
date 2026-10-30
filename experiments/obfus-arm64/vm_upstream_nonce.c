@@ -12,7 +12,7 @@
 #include "obfh_arm64_upstream_vm_public.h"
 
 #define NONCE_SITE(NAME,OP) \
-    OBFH_AC_DECLARE_STATIC(NAME,OP); \
+    OBFH_AC_DECLARE_META(NAME,OP); \
     OBFH_AS_DECLARE_NONCES(NAME)
 /* Independent fixed golden constants from upstream's uint32 wrap + modulo.
  * The previous Windows TinyCC candidate wrongly retained a 64-bit product
@@ -60,22 +60,21 @@ _Static_assert(nonce_xor_site==nonce_add_site+6u,
                "No surplus counters between adjacent operand VM calls");
 
 typedef struct {
-    obfh_sc_descriptor site;
+    uint32_t seed,key;
+    unsigned int variant,operation;
+    size_t length;
     uint32_t id,line,nonce_count_a,nonce_count_b,nonce_a,nonce_b;
 } nonce_fixture;
+/* Only numeric metadata is file-scope: the exact-size original program
+ * compound literal is constructed in its EXECUTION scope below. */
+#define NONCE_META(NAME) { \
+    (uint32_t)OBFH_SEED,(uint32_t)NAME##_key,NAME##_variant, \
+    NAME##_operation,NAME##_length,NAME##_site,NAME##_line, \
+    NAME##_operand_counter_a,NAME##_operand_counter_b, \
+    NAME##_nonce_a,NAME##_nonce_b }
 static const nonce_fixture fixtures[] = {
-    {OBFH_SC_DESCRIPTOR(nonce_add),nonce_add_site,nonce_add_line,
-      nonce_add_operand_counter_a,nonce_add_operand_counter_b,
-      nonce_add_nonce_a,nonce_add_nonce_b},
-    {OBFH_SC_DESCRIPTOR(nonce_xor),nonce_xor_site,nonce_xor_line,
-      nonce_xor_operand_counter_a,nonce_xor_operand_counter_b,
-      nonce_xor_nonce_a,nonce_xor_nonce_b},
-    {OBFH_SC_DESCRIPTOR(nonce_eq),nonce_eq_site,nonce_eq_line,
-      nonce_eq_operand_counter_a,nonce_eq_operand_counter_b,
-      nonce_eq_nonce_a,nonce_eq_nonce_b},
-    {OBFH_SC_DESCRIPTOR(nonce_truth),nonce_truth_site,nonce_truth_line,
-      nonce_truth_operand_counter_a,nonce_truth_operand_counter_b,
-      nonce_truth_nonce_a,nonce_truth_nonce_b}
+    NONCE_META(nonce_add),NONCE_META(nonce_xor),
+    NONCE_META(nonce_eq),NONCE_META(nonce_truth)
 };
 
 /* Independently transcribed upstream RND(max 2147483647), with explicit
@@ -135,10 +134,24 @@ static int header_salt_contract(void) {
 }
 
 static int pair_contract(void) {
+    const uint32_t *const code[4] = {
+        OBFH_AC_PROGRAM(nonce_add),OBFH_AC_PROGRAM(nonce_xor),
+        OBFH_AC_PROGRAM(nonce_eq),OBFH_AC_PROGRAM(nonce_truth)
+    };
+    const size_t sizes[4] = {
+        sizeof(OBFH_AC_PROGRAM(nonce_add)),
+        sizeof(OBFH_AC_PROGRAM(nonce_xor)),
+        sizeof(OBFH_AC_PROGRAM(nonce_eq)),
+        sizeof(OBFH_AC_PROGRAM(nonce_truth))
+    };
     unsigned int i,round;
     for(i=0u;i<sizeof fixtures/sizeof fixtures[0];++i) {
         const nonce_fixture *f=&fixtures[i];
-        const obfh_sc_descriptor *site=&f->site;
+        const obfh_sc_descriptor descriptor = {
+            code[i],f->length,f->seed,f->key,f->variant,f->operation
+        };
+        const obfh_sc_descriptor *site=&descriptor;
+        if(sizes[i]!=f->length*sizeof(uint32_t)) return 23;
         upstream_test_program expected_program;
         long double left=i==0u?5.0L:i==1u?7.0L:i==2u?3.0L:1.0L;
         long double right=i==0u?3.0L:i==1u?2.0L:i==2u?3.0L:0.0L;
@@ -204,7 +217,12 @@ static int pair_contract(void) {
     return 0;
 }
 static int negative_contract(void) {
-    const obfh_sc_descriptor *s=&fixtures[0].site;
+    const uint32_t *const code=OBFH_AC_PROGRAM(nonce_add);
+    const obfh_sc_descriptor descriptor = {
+       code,nonce_add_length,(uint32_t)OBFH_SEED,(uint32_t)nonce_add_key,
+       nonce_add_variant,nonce_add_operation
+    };
+    const obfh_sc_descriptor *s=&descriptor;
     long double output=-999.0L;
     uint32_t steps=UINT32_C(0xdecafbad);
     obfh_uprt_trace trace,backup;
