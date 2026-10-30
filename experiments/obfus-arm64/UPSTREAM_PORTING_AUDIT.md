@@ -18,7 +18,7 @@ Initial toolchain: TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893
 | 08 (3046) | Junk primitives and scalar/string transport | Separate pure scalar identities from x86 asm; A64 branch and value transport must preserve flags and clobbers |
 | 09 (3218) | CRT cache and VM value transport | Preserve locking/initialization/ownership; audit compiler atomics, pointer-width transports and DLL lifetime |
 | 10 (3359) | CFLOW selectors / permutations / graphs | Preserve conditions and randomization semantics, implement new ARM64 branch patterns with explicit byte width/relocations |
-| 11 (4151) | VM register, flag, decode/execute kernel | Both fixed four-word bitwise and new 4–16-word bounded `TEST/JFLAG/JUMP/DEC` A64 VM32 share one seed/site codec; malformed bytecode and execution budget fail closed; **upstream packed format, float/long double and complete VM remain open** |
+| 11 (4151) | VM register, flag, decode/execute kernel | POC VM32 fixed/flow executors retain one independent codec. A separate source-faithful **upstream packed-word codec** (6 opcode × 9 mask × 6 field × 4 layouts, inverse and rotation) now has 10,368 golden-vector tests; **upstream 4-register VM runtime, floating/long-double register semantics and full ABI remain open** |
 | 12 (4856) | Inline string/memory kernels | Preserve byte/UTF-8, buffer capacity, aliasing and return semantics; reject missing original macros instead of silent no-ops |
 | 13 (6872) | Automatic C keyword interception | **BLOCKED:** validate nested if/else, loops, switch, case, breaks and returns; do not equate an explicit branch helper to automatic interception |
 | 14 (7086) | Public VM interface / program templates | Six bitwise `VM_*` source signatures and three explicit `VM_IF/ELSE_IF/ELSE` macros have isolated direct-A64 value transports and semantic tests; upstream encoded VM dispatcher, automatic rewriting and remaining APIs remain **blocked** |
@@ -45,6 +45,8 @@ Initial toolchain: TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893
 - New opt-in `obfh_arm64_vm32_program.h` decodes and executes **four immutable encoded words** per source site with actual A64 instructions and strict program/operation validation. `vm_program.c` has successful-decode receipts, negative malformed bytecode and transactional error tests plus 49 boundary and 4,000 pseudo-random semantic inputs. This is a narrow VM with new encoding, **not** upstream's full instruction-program format.
 
 - Added `obfh_arm64_vm32_flow.h` with conditional and unconditional bytecode jumps, A64 TEST/DEC and 1–128 instruction budget. Full pre-validation and transactional output/step receipts, including loops that exhaust their budget. `vm_flow.c` checks 4,096 branch data pairs, 41 precise budget levels, bad targets, key/word corruption, uninitialized flag/register and NULL arguments. Shared `obfh_arm64_vm32_codec.h` is the **only** POC instruction-encoding definition. **Not** upstream opcode packing or full VM equivalence.
+
+- Separate `obfh_arm64_upstream_codec.h` ports **exact** upstream opcode/word/field/layout transforms without adding a new VM execution engine. `vm_upstream_codec.c` independently reproduces the original macro expressions and checks 10,368 vectors across all 1,296 mode combinations against fixed FNV64 `b19831d024873da0`. This test validates byte identity, not key authentication or upstream `Obfh_VirtualMachine` parity. No C/ISA fallback or legacy x86 changes.
 
 ## Admission after this POC
 
