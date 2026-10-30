@@ -183,7 +183,7 @@ static int windows_loader_relocation_and_function_table(void) {
     long disk_size;
     char path[4096];
     DWORD directory_at=0u, validated=0u, scanned=0u;
-    unsigned long long preferred,actual,delta;
+    unsigned long long preferred=0u,actual=0u,delta=0u;
     MEMORY_BASIC_INFORMATION memory;
     unsigned long long lookup_base=0u;
     typedef void *(WINAPI *obfh_lookup_fn)(
@@ -205,15 +205,10 @@ static int windows_loader_relocation_and_function_table(void) {
        !(nt->OptionalHeader.DllCharacteristics&IMAGE_DLLCHARACTERISTICS_NX_COMPAT))
         return 53;
     actual=(unsigned long long)(uintptr_t)(void *)module;
-    preferred=(unsigned long long)nt->OptionalHeader.ImageBase;
-    delta=actual-preferred;
-    /* A nonpreferred loader base is a REQUIRED admission, not assumed
-     * from the PE DYNAMIC_BASE flag. Repeat native test ten times.
+    /* The Windows loader may rewrite the in-memory optional header's
+     * ImageBase. The original preferred address MUST come from the on-disk
+     * PE image, NOT from the mapped header (which may equal actual).
      */
-    if(actual==preferred) {
-        fprintf(stderr,"ARM64_LOADER_RED: image at preferred base %llx\n",preferred);
-        return 54;
-    }
     if(VirtualQuery((const void *)site0_words,&memory,sizeof memory)!=
                           sizeof memory ||
        memory.State!=MEM_COMMIT ||
@@ -238,6 +233,30 @@ static int windows_loader_relocation_and_function_table(void) {
     checked=fread(disk,1u,(size_t)disk_size,stream);
     fclose(stream);
     if(checked!=(size_t)disk_size) { status=63;goto cleanup; }
+    {
+        const IMAGE_DOS_HEADER *disk_dos=(const IMAGE_DOS_HEADER *)(const void *)disk;
+        const IMAGE_NT_HEADERS64 *disk_nt;
+        if(disk_dos->e_magic!=IMAGE_DOS_SIGNATURE ||
+           disk_dos->e_lfanew<64 ||
+           (unsigned long long)disk_dos->e_lfanew+
+             sizeof(IMAGE_NT_HEADERS64)>(unsigned long long)disk_size) {
+            status=54;goto cleanup;
+        }
+        disk_nt=(const IMAGE_NT_HEADERS64 *)(const void *)
+                (disk+disk_dos->e_lfanew);
+        if(disk_nt->Signature!=IMAGE_NT_SIGNATURE ||
+           disk_nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
+           disk_nt->FileHeader.Machine!=IMAGE_FILE_MACHINE_ARM64) {
+            status=54;goto cleanup;
+        }
+        preferred=(unsigned long long)disk_nt->OptionalHeader.ImageBase;
+        delta=actual-preferred;
+        if(actual==preferred) {
+            fprintf(stderr,"ARM64_LOADER_RED: still at on-disk preferred base %llx\n",
+                    preferred);
+            status=54;goto cleanup;
+        }
+    }
 
     reloc=&nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
     if(!reloc->VirtualAddress || !reloc->Size ||
