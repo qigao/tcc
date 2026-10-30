@@ -63,6 +63,7 @@ static int golden_reg_flag_control(void) {
                 uint32_t key=UINT32_C(0x31415927)^(seed*UINT32_C(0x9e3779b9));
                 uint32_t expected_steps=j*17u+mode*3u+direction;
                 uint32_t draw=reference_draw(seed),flags,encoded_flags,flag_key;
+                unsigned int actual_byte_mode=(seed>>8u)%3u;
                 if (obfh_upreg_initialize(&ctx,seed,key)!=OBFH_UPREG_OK)
                     return 12;
                 if (ctx.flags_ready!=0u || ctx.initialized!=0u)
@@ -84,8 +85,8 @@ static int golden_reg_flag_control(void) {
                         state=reference_mix(seed,state+(uint32_t)pos+1u);
                         byte=input[pos];
                         m=(unsigned char)state;
-                        if (mode==0u) expected[pos]=(unsigned char)(byte^m);
-                        else if (mode==1u)
+                        if (actual_byte_mode==0u) expected[pos]=(unsigned char)(byte^m);
+                        else if (actual_byte_mode==1u)
                             expected[pos]=(unsigned char)((uint32_t)byte+m);
                         else expected[pos]=(unsigned char)((uint32_t)byte-m);
                     }
@@ -144,9 +145,9 @@ static int golden_reg_flag_control(void) {
             }
     if (seen_flag_modes!=7u || seen_control_sides!=3u) return 21;
     if (sizeof(long double)==8u &&
-        digest!=UINT64_C(0x52774a6baaf5ade4)) return 22;
+        digest!=UINT64_C(0x11d5cfdd0648db80)) return 22;
     if (sizeof(long double)==16u &&
-        digest!=UINT64_C(0x46475a908a172544)) return 23;
+        digest!=UINT64_C(0xb1e56bb008e20fa6)) return 23;
     return 0;
 }
 
