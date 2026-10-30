@@ -38,12 +38,23 @@
  * intermediate MASK, and only then perform the source's range modulo.
  * Every operation remains an integral constant expression (no runtime RNG).
  */
+/* Shared source RND(min,max) contract for admitted ranges. The original
+ * unsigned 32-bit product must wrap BEFORE division; a widened compiler
+ * constant folder may otherwise generate a different operand profile.
+ * Range and inputs are integral constant expressions, not runtime RNG.
+ */
+#define OBFH_AS_RND_RANGE(COUNT,LINE,SEED,MIN,MAX) \
+    ((uint32_t)(MIN) + (uint32_t)( \
+      (((((uint64_t)(uint32_t)(COUNT) + \
+           (uint64_t)(uint32_t)(LINE) + \
+           (uint64_t)(uint32_t)(SEED)) * UINT64_C(2654435761)) & \
+           UINT64_C(0xffffffff)) % \
+       ((uint64_t)(uint32_t)(MAX) - (uint64_t)(uint32_t)(MIN) + \
+        UINT64_C(1)))))
 #define OBFH_AS_RND31(COUNT,LINE,SEED) \
-    (UINT32_C(1) + (uint32_t)((((uint64_t)(uint32_t)(COUNT) + \
-                                (uint64_t)(uint32_t)(LINE) + \
-                                (uint64_t)(uint32_t)(SEED)) * \
-                                UINT64_C(2654435761) & UINT64_C(0xffffffff)) % \
-                              UINT64_C(2147483647)))
+    OBFH_AS_RND_RANGE(COUNT,LINE,SEED,1u,UINT32_C(2147483647))
+#define OBFH_AS_RND_SALT(COUNT,LINE,SEED) \
+    OBFH_AS_RND_RANGE(COUNT,LINE,SEED,16u,48u)
 #define OBFH_AS_DECLARE_NONCES(NAME) \
     enum { \
         NAME##_operand_counter_a=__COUNTER__, \

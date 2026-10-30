@@ -5,13 +5,33 @@
  * No plaintext C operation fallback. On execution rejection, abort().
  *
  * NOT a production drop-in obfus.h: original CRT/anti-debug/stack/keyword
- * interception, caller salt profiles, PE ABI/unwind, and exact-length
+ * interception, exact upstream-header counter history, PE ABI/unwind, and exact-length
  * auto-site storage remain separate qualification gates.
  */
 #ifndef QIGAO_OBFH_ARM64_UPSTREAM_VM_PUBLIC_H
 #define QIGAO_OBFH_ARM64_UPSTREAM_VM_PUBLIC_H
 #include <stdlib.h>
 #include "obfh_arm64_upstream_auto_site.h"
+
+/* Original header defines two consecutive SALT_NUM1/SALT_NUM2 draws using
+ * RND(16,48), before operation macros consume source site counters.
+ * Source-line and counter history are those of this ported header: do NOT
+ * claim absolute numeric parity with a different full upstream header TU.
+ */
+enum {
+    OBFH_PUB_SALT_COUNTER_A=__COUNTER__, OBFH_PUB_SALT_LINE_A=__LINE__,
+    OBFH_PUB_SALT_COUNTER_B=__COUNTER__, OBFH_PUB_SALT_LINE_B=__LINE__,
+    OBFH_PUB_SALT_NUM1=OBFH_AS_RND_SALT(
+        OBFH_PUB_SALT_COUNTER_A,OBFH_PUB_SALT_LINE_A,OBFH_SEED),
+    OBFH_PUB_SALT_NUM2=OBFH_AS_RND_SALT(
+        OBFH_PUB_SALT_COUNTER_B,OBFH_PUB_SALT_LINE_B,OBFH_SEED)
+};
+_Static_assert(OBFH_PUB_SALT_COUNTER_B==OBFH_PUB_SALT_COUNTER_A+1u &&
+               OBFH_PUB_SALT_LINE_B==OBFH_PUB_SALT_LINE_A+1u,
+               "VM source header salts require two adjacent RND expansions");
+_Static_assert(OBFH_PUB_SALT_NUM1>=16u && OBFH_PUB_SALT_NUM1<=48u &&
+               OBFH_PUB_SALT_NUM2>=16u && OBFH_PUB_SALT_NUM2<=48u,
+               "VM source header salts out of original RND(16,48) range");
 
 #if defined(VM_ADD) || defined(VM_SUB) || defined(VM_MUL) || defined(VM_DIV) || \
     defined(VM_MOD) || defined(VM_EQU) || defined(VM_NEQ) || \
@@ -42,8 +62,9 @@ enum {
     long double __obfh_public_result=0.0L; \
     uint32_t __obfh_public_steps=0u; \
     enum obfh_uprt_status __obfh_public_status= \
-        OBFH_SC_CALL_NONCES(__obfh_public_site,(LEFT),(RIGHT),(FLOATING), \
+        OBFH_SC_CALL_PROFILED(__obfh_public_site,(LEFT),(RIGHT),(FLOATING), \
             __obfh_public_site_nonce_a,__obfh_public_site_nonce_b, \
+            OBFH_PUB_SALT_NUM1,OBFH_PUB_SALT_NUM2, \
             &__obfh_public_result,&__obfh_public_steps, \
             (obfh_uprt_trace *)0); \
     if (__obfh_public_status!=OBFH_UPRT_OK || \

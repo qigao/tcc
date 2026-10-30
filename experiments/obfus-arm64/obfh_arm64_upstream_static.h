@@ -228,25 +228,40 @@ typedef struct {
  * receipt. The current fixed salts 17/41 are separately qualified POC salts;
  * source-selected SALT_NUM1/SALT_NUM2 remain a distinct parity gate.
  */
+/* One VM execution owner. All source-selected salt and independent nonce
+ * values are passed through the same paired operand encoder/decoder.
+ * Invalid salts or nonces fail transactionally without touching output.
+ */
+static inline enum obfh_uprt_status obfh_sc_call_profiled(
+        const obfh_sc_descriptor *site,
+        long double left, long double right, unsigned int floating,
+        uint32_t nonce_a, uint32_t nonce_b, int salt_a, int salt_b,
+        long double *out, uint32_t *steps, obfh_uprt_trace *route) {
+    obfh_arm64_upstream_value a,b;
+    if (!site || !out || !steps ||
+        site->length==0u || site->length>OBFH_UPRT_MAX_WORDS ||
+        floating>1u || salt_a<16 || salt_a>48 || salt_b<16 || salt_b>48 ||
+        nonce_a==0u || nonce_a>UINT32_C(2147483647) ||
+        nonce_b==0u || nonce_b>UINT32_C(2147483647))
+        return OBFH_UPRT_INVALID_ARGS;
+    if (obfh_arm64_upvalue_encode((const unsigned char *)&left,sizeof left,
+           site->seed,salt_a,(nonce_a<<1u)|floating,&a)!=OBFH_UPVALUE_OK ||
+        obfh_arm64_upvalue_encode((const unsigned char *)&right,sizeof right,
+           site->seed,salt_b,(nonce_b<<1u)|floating,&b)!=OBFH_UPVALUE_OK)
+        return OBFH_UPRT_INVALID_ARGS;
+    return obfh_arm64_upstream_execute(site->words,site->length,
+          site->seed,site->key,&a,salt_a,&b,salt_b,128u,out,steps,route);
+}
+/* Earlier fixtures explicitly used salts 17/41. Keep them for regression
+ * admission; the public source macro now uses the header's own source
+ * selected SALT_NUM1/SALT_NUM2 via obfh_sc_call_profiled instead. */
 static inline enum obfh_uprt_status obfh_sc_call_nonces(
         const obfh_sc_descriptor *site,
         long double left, long double right, unsigned int floating,
         uint32_t nonce_a, uint32_t nonce_b,
         long double *out, uint32_t *steps, obfh_uprt_trace *route) {
-    obfh_arm64_upstream_value a,b;
-    if (!site || !out || !steps ||
-        site->length==0u || site->length>OBFH_UPRT_MAX_WORDS ||
-        floating>1u ||
-        nonce_a==0u || nonce_a>UINT32_C(2147483647) ||
-        nonce_b==0u || nonce_b>UINT32_C(2147483647))
-        return OBFH_UPRT_INVALID_ARGS;
-    if (obfh_arm64_upvalue_encode((const unsigned char *)&left,sizeof left,
-           site->seed,17,(nonce_a<<1u)|floating,&a)!=OBFH_UPVALUE_OK ||
-        obfh_arm64_upvalue_encode((const unsigned char *)&right,sizeof right,
-           site->seed,41,(nonce_b<<1u)|floating,&b)!=OBFH_UPVALUE_OK)
-        return OBFH_UPRT_INVALID_ARGS;
-    return obfh_arm64_upstream_execute(site->words,site->length,
-          site->seed,site->key,&a,17,&b,41,128u,out,steps,route);
+    return obfh_sc_call_profiled(site,left,right,floating,
+            nonce_a,nonce_b,17,41,out,steps,route);
 }
 /* Keep the older independent nonce-fixture API for byte-contract tests;
  * its exact two-nonce values are now forwarded to the same execution owner.
@@ -271,4 +286,9 @@ static inline enum obfh_uprt_status obfh_sc_call(
                  (long double)(left),(long double)(right), \
                  (unsigned int)(floating),(uint32_t)(na),(uint32_t)(nb), \
                  (out),(steps),(route))
+#define OBFH_SC_CALL_PROFILED(NAME,left,right,floating,na,nb,sa,sb,out,steps,route) \
+    obfh_sc_call_profiled(&(const obfh_sc_descriptor)OBFH_SC_DESCRIPTOR(NAME), \
+                 (long double)(left),(long double)(right), \
+                 (unsigned int)(floating),(uint32_t)(na),(uint32_t)(nb), \
+                 (int)(sa),(int)(sb),(out),(steps),(route))
 #endif

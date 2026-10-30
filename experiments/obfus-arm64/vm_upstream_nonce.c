@@ -9,7 +9,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "obfh_arm64_upstream_program_reference.h"
-#include "obfh_arm64_upstream_auto_site.h"
+#include "obfh_arm64_upstream_vm_public.h"
 
 #define NONCE_SITE(NAME,OP) \
     OBFH_AS_DECLARE(NAME,OP); \
@@ -30,6 +30,19 @@ _Static_assert(OBFH_AS_RND31(5u,18u,UINT32_C(0x12345679))==
 _Static_assert(OBFH_AS_RND31(6u,18u,UINT32_C(0x12345679))==
                UINT32_C(1782670146),
                "Original alternate-seed B operand 32-bit RND golden");
+/* Two header salt RND(16,48) calls must precede test source-site
+ * counters and must use the exact unsigned wrap before modulo 33.
+ * Golden values are independently calculated from upstream expressions.
+ */
+_Static_assert(OBFH_AS_RND_SALT(5u,18u,UINT32_C(0x12345678))==47u,
+               "Original header salt A golden seed even");
+_Static_assert(OBFH_AS_RND_SALT(6u,18u,UINT32_C(0x12345678))==24u,
+               "Original header salt B golden seed even");
+_Static_assert(OBFH_AS_RND_SALT(5u,18u,UINT32_C(0x12345679))==24u,
+               "Original header salt A golden seed odd");
+_Static_assert(OBFH_AS_RND_SALT(6u,18u,UINT32_C(0x12345679))==30u,
+               "Original header salt B golden seed odd");
+
 enum { nonce_before=__COUNTER__ };
 NONCE_SITE(nonce_add,UOP_ADD);
 NONCE_SITE(nonce_xor,UOP_BXOR);
@@ -70,6 +83,55 @@ static const nonce_fixture fixtures[] = {
 static uint32_t source_rnd31(uint32_t counter,uint32_t line,uint32_t seed) {
     uint32_t value=(counter+line+seed)*UINT32_C(2654435761);
     return UINT32_C(1)+(value % UINT32_C(2147483647));
+}
+
+/* Independent C reference to source's RND(16,48). The multiplication
+ * is stored in an actual uint32_t before performing range modulo.
+ */
+static uint32_t source_rnd_salt(uint32_t counter,uint32_t line,uint32_t seed) {
+    uint32_t word=(counter+line+seed)*UINT32_C(2654435761);
+    return 16u+(word%33u);
+}
+static int header_salt_contract(void) {
+    const uint32_t salt_a=source_rnd_salt(
+        OBFH_PUB_SALT_COUNTER_A,OBFH_PUB_SALT_LINE_A,(uint32_t)OBFH_SEED);
+    const uint32_t salt_b=source_rnd_salt(
+        OBFH_PUB_SALT_COUNTER_B,OBFH_PUB_SALT_LINE_B,(uint32_t)OBFH_SEED);
+    if (OBFH_PUB_SALT_COUNTER_B!=OBFH_PUB_SALT_COUNTER_A+1u ||
+        OBFH_PUB_SALT_LINE_B!=OBFH_PUB_SALT_LINE_A+1u ||
+        (uint32_t)OBFH_PUB_SALT_NUM1!=salt_a ||
+        (uint32_t)OBFH_PUB_SALT_NUM2!=salt_b ||
+        salt_a<16u || salt_a>48u || salt_b<16u || salt_b>48u) {
+        fprintf(stderr,"UPSALT_HEADER_MISMATCH count=%u/%u line=%u/%u actual=%u/%u reference=%u/%u\n",
+                OBFH_PUB_SALT_COUNTER_A,OBFH_PUB_SALT_COUNTER_B,
+                OBFH_PUB_SALT_LINE_A,OBFH_PUB_SALT_LINE_B,
+                OBFH_PUB_SALT_NUM1,OBFH_PUB_SALT_NUM2,salt_a,salt_b);
+        return 16;
+    }
+    /* Verify identical inputs can be transported with *different salts*
+     * and source-specific nonces, with no double representation fallback.
+     */
+    {
+        long double left=5.25L,right=3.5L,decoded=-777.0L;
+        obfh_arm64_upstream_value a,b;
+        unsigned char raw[sizeof(long double)];
+        uint32_t na=source_rnd31(5u,18u,(uint32_t)OBFH_SEED);
+        uint32_t nb=source_rnd31(6u,18u,(uint32_t)OBFH_SEED);
+        if(obfh_arm64_upvalue_encode((const unsigned char*)&left,
+               sizeof left,(uint32_t)OBFH_SEED,(int)salt_a,
+               (na<<1u)|1u,&a)!=OBFH_UPVALUE_OK ||
+           obfh_arm64_upvalue_encode((const unsigned char*)&right,
+               sizeof right,(uint32_t)OBFH_SEED,(int)salt_b,
+               (nb<<1u)|1u,&b)!=OBFH_UPVALUE_OK ||
+           obfh_arm64_upvalue_decode(&a,(uint32_t)OBFH_SEED,(int)salt_a,
+               raw,sizeof raw)!=OBFH_UPVALUE_OK ||
+           memcmp(&left,raw,sizeof left)!=0) return 17;
+        if(obfh_arm64_upvalue_decode(&b,(uint32_t)OBFH_SEED,(int)salt_b,
+               raw,sizeof raw)!=OBFH_UPVALUE_OK) return 18;
+        memcpy(&decoded,raw,sizeof decoded);
+        if(decoded!=right || a.nonce==(b.nonce)) return 19;
+    }
+    return 0;
 }
 
 static int pair_contract(void) {
@@ -119,9 +181,16 @@ static int pair_contract(void) {
             long double expected=reference(site->operation,left,right,1u);
             obfh_uprt_trace trace;
             uint32_t steps=UINT32_C(0xdecafbad);
-            enum obfh_uprt_status status=obfh_sc_call_nonces(
-                  site,left,right,1u,
-                  f->nonce_a,f->nonce_b,&result,&steps,&trace);
+            /* Keep historical salt 17/41 and new source-header salt
+             * profiles in the SAME VM differential (no second engine).
+             */
+            enum obfh_uprt_status status=round<2u ?
+                obfh_sc_call_nonces(site,left,right,1u,
+                    f->nonce_a,f->nonce_b,&result,&steps,&trace) :
+                obfh_sc_call_profiled(site,left,right,1u,
+                    f->nonce_a,f->nonce_b,
+                    OBFH_PUB_SALT_NUM1,OBFH_PUB_SALT_NUM2,
+                    &result,&steps,&trace);
             if(status!=OBFH_UPRT_OK ||
                !equal_number(result,expected) ||
                steps!=trace.count ||
@@ -153,13 +222,30 @@ static int negative_contract(void) {
     WRONG(UINT32_C(0x80000000),fixtures[0].nonce_b);
     WRONG(fixtures[0].nonce_a,UINT32_MAX);
 #undef WRONG
+#define BAD_SALT(SA,SB) do { \
+    output=-999.0L;steps=UINT32_C(0xdecafbad);trace=backup; \
+    result=obfh_sc_call_profiled(s,5.0L,3.0L,0u, \
+            fixtures[0].nonce_a,fixtures[0].nonce_b, \
+            (SA),(SB),&output,&steps,&trace); \
+    if(result!=OBFH_UPRT_INVALID_ARGS || output!=-999.0L || \
+       steps!=UINT32_C(0xdecafbad) || \
+       memcmp(&trace,&backup,sizeof trace)!=0) return 22; \
+} while(0)
+    BAD_SALT(15,OBFH_PUB_SALT_NUM2);
+    BAD_SALT(OBFH_PUB_SALT_NUM1,49);
+    BAD_SALT(-1,OBFH_PUB_SALT_NUM2);
+    BAD_SALT(OBFH_PUB_SALT_NUM1,0);
+#undef BAD_SALT
     return 0;
 }
 int main(void) {
-    int e=pair_contract();
+    int e=header_salt_contract();
+    if(e)return e;
+    e=pair_contract();
     if(e)return e;
     e=negative_contract();
     if(e)return e;
-    printf("UPSTREAM_ORIGINAL_TWO_NONCES_PASS: 4 sites\n");
+    printf("UPSTREAM_ORIGINAL_NONCES_AND_HEADER_SALTS_PASS: 4 sites, salts=%u/%u\n",
+           OBFH_PUB_SALT_NUM1,OBFH_PUB_SALT_NUM2);
     return 0;
 }
