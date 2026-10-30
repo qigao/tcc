@@ -14,6 +14,22 @@
 #define NONCE_SITE(NAME,OP) \
     OBFH_AS_DECLARE(NAME,OP); \
     OBFH_AS_DECLARE_NONCES(NAME)
+/* Independent fixed golden constants from upstream's uint32 wrap + modulo.
+ * The previous Windows TinyCC candidate wrongly retained a 64-bit product
+ * until the range modulo, producing 1146285700 instead of 768765920.
+ */
+_Static_assert(OBFH_AS_RND31(5u,18u,UINT32_C(0x12345678))==
+               UINT32_C(768765920),
+               "Original first operand 32-bit RND golden");
+_Static_assert(OBFH_AS_RND31(6u,18u,UINT32_C(0x12345678))==
+               UINT32_C(1275718034),
+               "Original second operand 32-bit RND golden");
+_Static_assert(OBFH_AS_RND31(5u,18u,UINT32_C(0x12345679))==
+               UINT32_C(1275718034),
+               "Original alternate-seed operand 32-bit RND golden");
+_Static_assert(OBFH_AS_RND31(6u,18u,UINT32_C(0x12345679))==
+               UINT32_C(1782670146),
+               "Original alternate-seed B operand 32-bit RND golden");
 enum { nonce_before=__COUNTER__ };
 NONCE_SITE(nonce_add,UOP_ADD);
 NONCE_SITE(nonce_xor,UOP_BXOR);

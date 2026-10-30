@@ -33,10 +33,17 @@
  * NOT a runtime RNG. Two operand expansions consume TWO counters after the
  * four site/junk counters. The original RND domain includes 1..2147483647.
  */
+/* TinyCC Windows constant folding may widen a uint32_t multiply before
+ * modulo. Force source-equivalent modulo-2^32 wrap explicitly via a 64-bit
+ * intermediate MASK, and only then perform the source's range modulo.
+ * Every operation remains an integral constant expression (no runtime RNG).
+ */
 #define OBFH_AS_RND31(COUNT,LINE,SEED) \
-    (UINT32_C(1) + ((((uint32_t)(COUNT) + (uint32_t)(LINE) + \
-                       (uint32_t)(SEED)) * UINT32_C(2654435761)) % \
-                     UINT32_C(2147483647)))
+    (UINT32_C(1) + (uint32_t)((((uint64_t)(uint32_t)(COUNT) + \
+                                (uint64_t)(uint32_t)(LINE) + \
+                                (uint64_t)(uint32_t)(SEED)) * \
+                                UINT64_C(2654435761) & UINT64_C(0xffffffff)) % \
+                              UINT64_C(2147483647)))
 #define OBFH_AS_DECLARE_NONCES(NAME) \
     enum { \
         NAME##_operand_counter_a=__COUNTER__, \
