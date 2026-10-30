@@ -478,11 +478,28 @@ jobs:
             # Independently reconstruct site0/site7/site0_second packed words;
             # require complete streams in non-writable PE sections and
             # forbid relocation records from touching their stored bytes.
-            python experiments/obfus-arm64/verify_pe_vm_sections.py `
-              --binary $staticOutput --seed $s.seed
+            $peAuditOutput = @(python experiments/obfus-arm64/verify_pe_vm_sections.py `
+              --binary $staticOutput --seed $s.seed)
             if ($LASTEXITCODE -ne 0) {
-              throw "Real ARM64 PE VM section/relocation admission failed: $staticOutput"
+              throw "Real ARM64 PE VM/SEH metadata admission failed: $staticOutput"
             }
+            $peReceipt = @($peAuditOutput | Where-Object {
+              $_.StartsWith('ARM64_PE_VM_SECTIONS_PASS: ')
+            })
+            if ($peReceipt.Count -ne 1) {
+              throw "Expected exactly one PE audit receipt for $staticOutput"
+            }
+            $peReport = $peReceipt[0].Substring('ARM64_PE_VM_SECTIONS_PASS: '.Length) | ConvertFrom-Json
+            if ($peReport.machine -ne 'AA64' -or
+                $peReport.seh_metadata.pdata_entries -lt 1 -or
+                $peReport.seh_metadata.xdata_records -lt 1 -or
+                $peReport.seh_metadata.handler_records -ne 0 -or
+                $peReport.seh_metadata.automatic_handler_dispatch_verified -ne $false -or
+                $peReport.seh_metadata.scope_cleanup_verified -ne $false) {
+              throw "Unexpected ARM64 .pdata/.xdata language SEH claim: $staticOutput"
+            }
+            Write-Host $peReceipt[0]
+            Write-Host "ARM64_PE_NO_LANGUAGE_SEH_HANDLER_RECEIPT: pdata=$($peReport.seh_metadata.pdata_entries) xdata=$($peReport.seh_metadata.xdata_records) handlers=0"
             $manifest["obfh_upstream_static_$($s.id).exe"] = (Get-FileHash $staticOutput -Algorithm SHA256).Hash.ToLowerInvariant()
             # Verify all four original physical OBFH_V_CONTEXT ABI layouts.
             $contextOutput = "build-arm64/obfh_upstream_context_$($s.id).exe"
