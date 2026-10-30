@@ -178,14 +178,24 @@ typedef struct {
     unsigned int count;
     unsigned int saw_nonempty;
 } obfh_native_locale_context;
+/* Callback observations are diagnostic metadata, not fallback admission. */
+static volatile unsigned int obfh_native_locale_invocations;
+static volatile uintptr_t obfh_native_locale_param;
+static volatile DWORD obfh_native_locale_tid;
+static volatile unsigned int obfh_native_locale_bad;
 static BOOL CALLBACK obfh_native_locale_callback(LPWSTR name,DWORD flags,
                                                   LPARAM cookie) {
     obfh_native_locale_context *ctx=(obfh_native_locale_context *)
             (void *)(uintptr_t)cookie;
     (void)flags;
+    ++obfh_native_locale_invocations;
+    obfh_native_locale_param=(uintptr_t)cookie;
+    obfh_native_locale_tid=GetCurrentThreadId();
     if(!ctx || ctx->cookie!=(uintptr_t)UINT32_C(0x31ac9471) ||
-       ctx->thread!=GetCurrentThreadId() || !name || !name[0])
+       ctx->thread!=obfh_native_locale_tid || !name || !name[0]) {
+        ++obfh_native_locale_bad;
         return FALSE;
+    }
     ++ctx->count;
     ++ctx->saw_nonempty;
     return TRUE;
@@ -203,9 +213,28 @@ static int obfh_native_windows_callback_contract(void) {
     ctx.thread=GetCurrentThreadId();
     ctx.count=0u;
     ctx.saw_nonempty=0u;
+    obfh_native_locale_invocations=0u;
+    obfh_native_locale_param=0u;
+    obfh_native_locale_tid=0u;
+    obfh_native_locale_bad=0u;
+    SetLastError(0u);
     ok=enum_locales(obfh_native_locale_callback,0u,
                     (LPARAM)(uintptr_t)(void *)&ctx,(void *)0);
-    if(!ok || !ctx.count || ctx.count!=ctx.saw_nonempty) return 90;
+    if(!ok || !ctx.count || ctx.count!=ctx.saw_nonempty ||
+       obfh_native_locale_bad || 
+       obfh_native_locale_invocations!=ctx.count) {
+        fprintf(stderr,"ARM64_NATIVE_CALLBACK_RED: ok=%u count=%u "
+                "seen=%u bad=%u param=%llx expected=%llx "
+                "tid=%lu expected_thread=%lu gle=%lu\n",
+                (unsigned int)ok,ctx.count,
+                (unsigned int)obfh_native_locale_invocations,
+                (unsigned int)obfh_native_locale_bad,
+                (unsigned long long)obfh_native_locale_param,
+                (unsigned long long)(uintptr_t)(void *)&ctx,
+                (unsigned long)obfh_native_locale_tid,
+                (unsigned long)ctx.thread,(unsigned long)GetLastError());
+        return 90;
+    }
     printf("ARM64_NATIVE_WINDOWS_CALLBACK_PASS: callbacks=%u "
            "LPARAM_pointer_roundtrip=1\n",ctx.count);
     return 0;
