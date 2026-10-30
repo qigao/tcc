@@ -81,6 +81,9 @@ jobs:
             ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
               -D"OBFH_SEED=${seed}u" \
               experiments/obfus-arm64/vm_upstream_runtime.c -o "$dir/vm_upstream_runtime"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_static.c -o "$dir/vm_upstream_static"
             readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_bits" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_branches" | grep -q 'Machine:.*AArch64'
@@ -91,14 +94,16 @@ jobs:
             readelf -h "$dir/vm_upstream_value" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_registers" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_runtime" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_static" | grep -q 'Machine:.*AArch64'
             python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
             for i in 1 2 3 4 5; do
               "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"
               "$dir/vm_program"; "$dir/vm_flow"; "$dir/vm_upstream_codec"
               "$dir/vm_upstream_exec"; "$dir/vm_upstream_value"
               "$dir/vm_upstream_registers"; "$dir/vm_upstream_runtime"
+              "$dir/vm_upstream_static"
             done
-            echo "NATIVE_ARM64_${{ matrix.compiler }}_SEED_${seed}_UPSTREAM_RUNTIME_PASS"
+            echo "NATIVE_ARM64_${{ matrix.compiler }}_SEED_${seed}_UPSTREAM_STATIC_PASS"
           done
           # Both variants must differ on disk despite identical behavior.
           even="build-obfus/${{ matrix.compiler }}-0x12345678/smoke"
@@ -133,6 +138,15 @@ jobs:
           fi
           grep -Fq 'OBFH_SEED must fit an unsigned 32-bit build constant.' "$bad/range.log"
           echo "ARM64_UNSUPPORTED_OPTION_AND_SEED_RANGE_REJECTED"
+          if ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DOBFH_SEED=0x12345678u -DOBFH_STATIC_VARIANT_NEGATIVE_TEST=1 \
+            experiments/obfus-arm64/vm_upstream_static.c -o "$bad/static-rejected" \
+            >"$bad/static.log" 2>&1; then
+            echo "::error::Mismatched immutable obfus VM variant compiled"
+            exit 1
+          fi
+          grep -Fq 'Static obfus.h VM variant disagrees with key' "$bad/static.log"
+          echo "UPSTREAM_STATIC_VARIANT_MISMATCH_REJECTED"
           ccache -s
   linux-arm64-tinycc:
     runs-on: ubuntu-24.04-arm
@@ -174,6 +188,8 @@ jobs:
               experiments/obfus-arm64/vm_upstream_registers.c -o "$dir/vm_upstream_registers"
             tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
               experiments/obfus-arm64/vm_upstream_runtime.c -o "$dir/vm_upstream_runtime"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_static.c -o "$dir/vm_upstream_static"
             readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_bits" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_branches" | grep -q 'Machine:.*AArch64'
@@ -184,14 +200,16 @@ jobs:
             readelf -h "$dir/vm_upstream_value" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_registers" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_runtime" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_static" | grep -q 'Machine:.*AArch64'
             python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
             for i in 1 2 3 4 5; do
               "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"
               "$dir/vm_program"; "$dir/vm_flow"; "$dir/vm_upstream_codec"
               "$dir/vm_upstream_exec"; "$dir/vm_upstream_value"
               "$dir/vm_upstream_registers"; "$dir/vm_upstream_runtime"
+              "$dir/vm_upstream_static"
             done
-            echo "NATIVE_TCC_ARM64_SEED_${seed}_UPSTREAM_RUNTIME_PASS"
+            echo "NATIVE_TCC_ARM64_SEED_${seed}_UPSTREAM_STATIC_PASS"
           done
           if cmp -s build-obfus/tcc-0x12345678/smoke build-obfus/tcc-0x12345679/smoke; then
             echo "::error::TinyCC AArch64 seed variants are identical"
@@ -219,6 +237,17 @@ jobs:
           grep -Fq 'Original obfus.h options are not implemented in the ARM64 POC.' \
             build-obfus/tcc-wrong-seed/option.log
           echo "TCC_UNSUPPORTED_OPTION_REJECTED"
+          if tools/tcc-installed/bin/tcc -DOBFH_SEED=0x12345678u \
+            -DOBFH_STATIC_VARIANT_NEGATIVE_TEST=1 \
+            experiments/obfus-arm64/vm_upstream_static.c \
+            -o build-obfus/tcc-wrong-seed/static-rejected \
+            >build-obfus/tcc-wrong-seed/static.log 2>&1; then
+            echo "::error::TinyCC accepted mismatched immutable obfus VM variant"
+            exit 1
+          fi
+          grep -Fq 'Static obfus.h VM variant disagrees with key' \
+            build-obfus/tcc-wrong-seed/static.log
+          echo "TCC_UPSTREAM_STATIC_VARIANT_MISMATCH_REJECTED"
   windows-arm64-tcc-build:
     runs-on: windows-2022
     steps:
@@ -380,6 +409,18 @@ jobs:
               throw "Wrong TinyCC ARM64 integrated upstream VM PE machine: $runtimeOutput"
             }
             $manifest["obfh_upstream_runtime_$($s.id).exe"] = (Get-FileHash $runtimeOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Original 8 variants emitted as immutable static per-site bytecode.
+            $staticOutput = "build-arm64/obfh_upstream_static_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_static.c' '-o' $staticOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 static per-site VM compile failed: $($s.id)" }
+            [byte[]]$staticBytes = [IO.File]::ReadAllBytes((Resolve-Path $staticOutput).Path)
+            $staticOffset = [BitConverter]::ToInt32($staticBytes, 0x3c)
+            if ($staticOffset -lt 64 -or $staticOffset + 6 -ge $staticBytes.Length -or
+                $staticBytes[$staticOffset] -ne 0x50 -or $staticBytes[$staticOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($staticBytes, $staticOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 static per-site VM PE machine: $staticOutput"
+            }
+            $manifest["obfh_upstream_static_$($s.id).exe"] = (Get-FileHash $staticOutput -Algorithm SHA256).Hash.ToLowerInvariant()
           }
           if ($manifest['obfh_even.exe'] -eq $manifest['obfh_odd.exe']) { throw 'Seed variants are identical' }
           if ($manifest['obfh_vm_even.exe'] -eq $manifest['obfh_vm_odd.exe']) { throw 'VM seed variants are identical' }
@@ -391,6 +432,7 @@ jobs:
           if ($manifest['obfh_upstream_value_even.exe'] -eq $manifest['obfh_upstream_value_odd.exe']) { throw 'Upstream operand-value seed variants are identical' }
           if ($manifest['obfh_upstream_registers_even.exe'] -eq $manifest['obfh_upstream_registers_odd.exe']) { throw 'Upstream encoded-register seed variants are identical' }
           if ($manifest['obfh_upstream_runtime_even.exe'] -eq $manifest['obfh_upstream_runtime_odd.exe']) { throw 'Upstream integrated VM seed variants are identical' }
+          if ($manifest['obfh_upstream_static_even.exe'] -eq $manifest['obfh_upstream_static_odd.exe']) { throw 'Static per-site obfus VM variants are identical' }
           $manifest | ConvertTo-Json | Set-Content -Encoding utf8 build-arm64/manifest.json
       - uses: actions/upload-artifact@v4
         with:
@@ -421,7 +463,7 @@ jobs:
           $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
           if ($arch -ne 'Arm64' -or -not [Environment]::Is64BitProcess) { throw "Real ARM64 required: $arch" }
           $manifest = Get-Content bin/manifest.json -Raw | ConvertFrom-Json -AsHashtable
-          foreach ($name in @('obfh_even.exe','obfh_odd.exe','obfh_vm_even.exe','obfh_vm_odd.exe','obfh_vm_branch_even.exe','obfh_vm_branch_odd.exe','obfh_vm_program_even.exe','obfh_vm_program_odd.exe','obfh_vm_flow_even.exe','obfh_vm_flow_odd.exe','obfh_upstream_codec_even.exe','obfh_upstream_codec_odd.exe','obfh_upstream_exec_even.exe','obfh_upstream_exec_odd.exe','obfh_upstream_value_even.exe','obfh_upstream_value_odd.exe','obfh_upstream_registers_even.exe','obfh_upstream_registers_odd.exe','obfh_upstream_runtime_even.exe','obfh_upstream_runtime_odd.exe')) {
+          foreach ($name in @('obfh_even.exe','obfh_odd.exe','obfh_vm_even.exe','obfh_vm_odd.exe','obfh_vm_branch_even.exe','obfh_vm_branch_odd.exe','obfh_vm_program_even.exe','obfh_vm_program_odd.exe','obfh_vm_flow_even.exe','obfh_vm_flow_odd.exe','obfh_upstream_codec_even.exe','obfh_upstream_codec_odd.exe','obfh_upstream_exec_even.exe','obfh_upstream_exec_odd.exe','obfh_upstream_value_even.exe','obfh_upstream_value_odd.exe','obfh_upstream_registers_even.exe','obfh_upstream_registers_odd.exe','obfh_upstream_runtime_even.exe','obfh_upstream_runtime_odd.exe','obfh_upstream_static_even.exe','obfh_upstream_static_odd.exe')) {
             $path = (Resolve-Path (Join-Path bin $name)).Path
             [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
             $offset = [BitConverter]::ToInt32($bytes, 0x3c)
