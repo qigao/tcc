@@ -289,7 +289,8 @@ static int rejection_matrix(void) {
     BAD(p.words,p.length,&in_a,17,&in_b,41,128u,OBFH_UPRT_INVALID_PROGRAM);
     if (!build_program(&p,seed,key,0u,UOP_ADD)) return 93;
     if (!obfh_upstream_decode(seed,key,3u,p.words[3],&word)) return 94;
-    word.a=3u; /* uninitialized R3 at source RETURN */
+    /* The fourth register is seed/key-selected, not hardcoded R3. */
+    word.a=p.vd; /* remains uninitialized in original variant 0 */
     if (!obfh_upstream_encode(seed,key,3u,&word,&p.words[3])) return 95;
     BAD(p.words,p.length,&in_a,17,&in_b,41,128u,OBFH_UPRT_UNINITIALIZED);
     if (!build_program(&p,seed,key,0u,UOP_EQ)) return 96;
