@@ -18,7 +18,7 @@ jobs:
       matrix:
         compiler: [gcc, clang]
     env:
-      CCACHE_DIR: ${{ runner.temp }}/tcc-obfus-arm64/${{ matrix.compiler }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache/tcc-obfus-arm64/${{ matrix.compiler }}
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_COMPILERCHECK: content
       CCACHE_COMPRESS: "true"
@@ -36,7 +36,7 @@ jobs:
       - name: Restore ARM64 compiler cache
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/tcc-obfus-arm64/${{ matrix.compiler }}
+          path: ${{ env.CCACHE_DIR }}
           key: tcc-obfus-arm64-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.compiler }}-${{ github.sha }}
           restore-keys: |
             tcc-obfus-arm64-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.compiler }}-
