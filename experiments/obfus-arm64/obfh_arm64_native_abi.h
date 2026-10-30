@@ -141,6 +141,37 @@ static unsigned long long obfh_native_exception_image;
 static volatile LONG obfh_native_exception_unwind_error;
 static volatile LONG obfh_native_exception_unwind_frames;
 static volatile LONG obfh_native_exception_unwind_steps;
+/* Three caller-side snapshots are taken immediately before the descending
+ * calls. The real exception-context unwind must reproduce the parent's
+ * nonvolatile registers, stack pointer, and low 64 bits of V8..V15.
+ * Comparing only PC/SP would miss callee-save corruption in unwind codes.
+ */
+typedef VOID (WINAPI *obfh_native_capture_context_t)(PCONTEXT);
+static obfh_native_capture_context_t obfh_native_capture_context;
+static CONTEXT obfh_native_exception_checkpoints[3];
+static volatile LONG obfh_native_nonvolatile_verified;
+static volatile LONG obfh_native_nonvolatile_failure_register;
+static int obfh_native_check_restored_context(
+        const CONTEXT *actual,const CONTEXT *saved) {
+    unsigned int j;
+    if(actual->Sp!=saved->Sp) return 7;
+    if(actual->Fp!=saved->Fp) return 8;
+    for(j=19u;j<=28u;++j) {
+        if(actual->X[j]!=saved->X[j]) {
+            obfh_native_nonvolatile_failure_register=(LONG)j;
+            return 9;
+        }
+    }
+    /* AArch64 preserves the LOW 64 bits of V8..V15, not their full width. */
+    for(j=8u;j<=15u;++j) {
+        if(memcmp(&actual->V[j],&saved->V[j],sizeof(uint64_t))!=0) {
+            obfh_native_nonvolatile_failure_register=(LONG)(100u+j);
+            return 10;
+        }
+    }
+    ++obfh_native_nonvolatile_verified;
+    return 0;
+}
 static __attribute__((noinline)) unsigned int obfh_native_exception_leaf(
         unsigned int cookie) {
     volatile ULONG frame[27];
@@ -155,6 +186,7 @@ static __attribute__((noinline)) unsigned int obfh_native_exception_middle(
     volatile ULONG frame[29];
     unsigned int i,r;
     for(i=0u;i<29u;++i) frame[i]=(ULONG)(cookie+i*11u);
+    obfh_native_capture_context(&obfh_native_exception_checkpoints[0]);
     r=obfh_native_exception_leaf(cookie);
     obfh_native_stack_sink^=frame[7];
     return r+5u;
@@ -164,6 +196,7 @@ static __attribute__((noinline)) unsigned int obfh_native_exception_outer(
     volatile ULONG frame[31];
     unsigned int i,r;
     for(i=0u;i<31u;++i) frame[i]=(ULONG)(cookie+i*13u);
+    obfh_native_capture_context(&obfh_native_exception_checkpoints[1]);
     r=obfh_native_exception_middle(cookie);
     obfh_native_stack_sink^=frame[5];
     return r+7u;
@@ -202,6 +235,11 @@ static int obfh_native_virtual_exception_walk(const CONTEXT *original) {
             /* Every qualifying TinyCC nonleaf frame reclaims stack. */
             if(!establisher ||
                (unsigned long long)context.Sp<=old_sp) return 5;
+            {
+                int reg_status=obfh_native_check_restored_context(
+                        &context,&obfh_native_exception_checkpoints[found]);
+                if(reg_status) return reg_status;
+            }
             ++found;
         }
     }
@@ -247,6 +285,8 @@ static int obfh_native_exception_dispatch_contract(void) {
     obfh_native_exception_unwind_error=-1;
     obfh_native_exception_unwind_frames=0;
     obfh_native_exception_unwind_steps=0;
+    obfh_native_nonvolatile_verified=0;
+    obfh_native_nonvolatile_failure_register=-1;
 
     obfh_native_veh_thread=GetCurrentThreadId();
     {
@@ -260,7 +300,10 @@ static int obfh_native_exception_dispatch_contract(void) {
                  GetProcAddress(kernel,"RtlLookupFunctionEntry");
         obfh_native_virtual_unwind=(obfh_native_virtual_unwind_t)(void *)
                  GetProcAddress(ntdll,"RtlVirtualUnwind");
-        if(!obfh_native_exception_lookup || !obfh_native_virtual_unwind)
+        obfh_native_capture_context=(obfh_native_capture_context_t)(void *)
+                 GetProcAddress(ntdll,"RtlCaptureContext");
+        if(!obfh_native_exception_lookup || !obfh_native_virtual_unwind ||
+           !obfh_native_capture_context)
             return 94;
         functions[0]=(void *)(uintptr_t)(void *)&obfh_native_exception_leaf;
         functions[1]=(void *)(uintptr_t)(void *)&obfh_native_exception_middle;
@@ -283,6 +326,7 @@ static int obfh_native_exception_dispatch_contract(void) {
     /* Continuable native delivery; if the OS cannot resume, this is a
      * genuine RED and we MUST NOT swallow the process exit in the CI.
      */
+    obfh_native_capture_context(&obfh_native_exception_checkpoints[2]);
     { unsigned int observed=obfh_native_exception_outer(0x2719u);
       if(observed!=0x2728u) return 96;
     }
@@ -298,7 +342,8 @@ static int obfh_native_exception_dispatch_contract(void) {
        (obfh_native_veh_flags & EXCEPTION_NONCONTINUABLE)!=0u ||
        obfh_native_veh_callback_thread!=obfh_native_veh_thread ||
        !obfh_native_veh_had_context ||
-       !obfh_native_veh_unwind_context_ok) {
+       !obfh_native_veh_unwind_context_ok ||
+       obfh_native_nonvolatile_verified!=3) {
         fprintf(stderr,"ARM64_VEH_POST_RED: removed=%lu seen=%ld "
                 "flags=%08lx callback_tid=%lu expected_tid=%lu "
                 "has_CONTEXT=%ld\n",
@@ -311,8 +356,13 @@ static int obfh_native_exception_dispatch_contract(void) {
                 (long)obfh_native_exception_unwind_error,
                 (long)obfh_native_exception_unwind_frames,
                 (long)obfh_native_exception_unwind_steps);
+        fprintf(stderr,"ARM64_NONVOLATILE_RESTORE_RED: verified=%ld reg=%ld\n",
+                (long)obfh_native_nonvolatile_verified,
+                (long)obfh_native_nonvolatile_failure_register);
         return 87;
     }
+    printf("ARM64_NATIVE_EXCEPTION_NONVOLATILE_RESTORE_PASS: frames=%ld x19_x29=1 v8_v15_low64=1 sp=1\n",
+           (long)obfh_native_nonvolatile_verified);
     printf("ARM64_NATIVE_EXCEPTION_CONTEXT_VIRTUAL_UNWIND_PASS: frames=%ld steps=%ld\n",
            (long)obfh_native_exception_unwind_frames,
            (long)obfh_native_exception_unwind_steps);
