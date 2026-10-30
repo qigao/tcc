@@ -64,7 +64,6 @@ static int compare_site(const obfh_sc_descriptor *s,
     upstream_test_program dynamic;
     unsigned int i,k,slot;
     uint32_t key=independently_derived_key(site,line,s->seed);
-    long double out;
     if (s->key!=key) {
         fprintf(stderr,"UPAUTO_KEY_MISMATCH site=%u line=%u counter=%u actual=%08x expected=%08x\n",
                 id,line,site,s->key,key);
