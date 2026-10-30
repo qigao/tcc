@@ -167,7 +167,17 @@ static int obfh_native_exception_dispatch_contract(void) {
     if(!removed || obfh_native_veh_seen!=1 ||
        obfh_native_veh_flags!=0u ||
        obfh_native_veh_callback_thread!=obfh_native_veh_thread ||
-       !obfh_native_veh_had_context) return 87;
+       !obfh_native_veh_had_context) {
+        fprintf(stderr,"ARM64_VEH_POST_RED: removed=%lu seen=%ld "
+                "flags=%08lx callback_tid=%lu expected_tid=%lu "
+                "has_CONTEXT=%ld\n",
+                (unsigned long)removed,(long)obfh_native_veh_seen,
+                (unsigned long)obfh_native_veh_flags,
+                (unsigned long)obfh_native_veh_callback_thread,
+                (unsigned long)obfh_native_veh_thread,
+                (long)obfh_native_veh_had_context);
+        return 87;
+    }
     puts("ARM64_NATIVE_VECTORED_EXCEPTION_DISPATCH_PASS: one continuable "
          "same-thread exception, handler retired");
     return 0;
