@@ -7,6 +7,8 @@
  *
  * IMPORTANT: semantic study, NOT the original Windows API/ABI, exact 8-variant
  * source macro facility, trap-on-error process exit, or Release qualification.
+ * Physical 4-way OBFH_V_CONTEXT is the authoritative between-step store;
+ * obfh_upreg_state is a strictly one-instruction decoded working view.
  */
 #ifndef QIGAO_OBFH_ARM64_UPSTREAM_RUNTIME_H
 #define QIGAO_OBFH_ARM64_UPSTREAM_RUNTIME_H
@@ -15,7 +17,7 @@
 #include <limits.h>
 #include <string.h>
 #include "obfh_arm64_upstream_codec.h"
-#include "obfh_arm64_upstream_registers.h"
+#include "obfh_arm64_upstream_context.h"
 
 #define OBFH_UPRT_MAX_WORDS 32u
 #define OBFH_UPRT_MAX_STEPS 128u
@@ -124,6 +126,32 @@ obfh_uprt_eval_bitwise(unsigned int opcode,long double left,long double right,
     return OBFH_UPRT_OK;
 }
 
+/* Publish only the physically committed original-layout return value.
+ * This is the sole return gate. No output, steps or trace is changed unless
+ * the physical owner has accepted and reloaded the terminal state. */
+static inline enum obfh_uprt_status obfh_uprt_publish_live_result(
+        obfh_upcontext_live *owner, const obfh_upreg_state *state,
+        unsigned int pc, unsigned int steps, const long double *value,
+        long double *output, uint32_t *out_steps,
+        obfh_uprt_trace *route, obfh_uprt_trace *out_trace) {
+    obfh_upreg_state verify;
+    uint32_t done_pc=0u, done_status=UINT32_MAX;
+    long double committed=0.0L;
+    if (!obfh_upcontext_live_store(owner,state,(uint32_t)pc,
+                                   (uint32_t)OBFH_UPRT_OK,value) ||
+        !obfh_upcontext_live_load(owner,&verify,&done_pc,
+                                  &done_status,&committed) ||
+        done_status!=(uint32_t)OBFH_UPRT_OK ||
+        done_pc!=(uint32_t)pc || verify.steps!=(uint32_t)steps)
+        return OBFH_UPRT_INVALID_PROGRAM;
+    *output=committed;
+    *out_steps=(uint32_t)steps;
+    if (out_trace) {
+        route->count=steps;
+        *out_trace=*route;
+    }
+    return OBFH_UPRT_OK;
+}
 /* Reversible packed words are NOT authenticated. Validate entire reachable
  * program format and mandatory operand bounds before executing anything. */
 static __attribute__((noinline)) enum obfh_uprt_status
@@ -133,11 +161,11 @@ obfh_arm64_upstream_execute(const uint32_t *program,size_t length,
              const obfh_arm64_upstream_value *input_b,int salt_b,
              unsigned int budget,long double *output,uint32_t *out_steps,
              obfh_uprt_trace *out_trace) {
-    obfh_upreg_state state;
+    obfh_upcontext_live owner;
     obfh_upstream_fields code[OBFH_UPRT_MAX_WORDS];
     unsigned char raw_a[sizeof(long double)],raw_b[sizeof(long double)];
     obfh_uprt_trace route;
-    unsigned int pc,steps=0u;
+    unsigned int pc;
     if (!program || !input_a || !input_b || !output || !out_steps ||
         !length || length>OBFH_UPRT_MAX_WORDS ||
         !budget || budget>OBFH_UPRT_MAX_STEPS) return OBFH_UPRT_INVALID_ARGS;
@@ -159,14 +187,28 @@ obfh_arm64_upstream_execute(const uint32_t *program,size_t length,
             return OBFH_UPRT_INVALID_PROGRAM;
         code[pc]=f;
     }
-    (void)obfh_upreg_initialize(&state,seed,key);
+    if (!obfh_upcontext_live_initialize(&owner,seed,key))
+        return OBFH_UPRT_INVALID_PROGRAM;
     memset(&route,0,sizeof route);
-    pc=0u;
     for (;;) {
+        /* Working state has exactly one instruction of lifetime: the
+         * original-layout physical object owns all intervening VM state.
+         * Its selected member is determined by (seed >> 4) % 4.
+         */
+        obfh_upreg_state state;
         obfh_upstream_fields f;
         long double a=0.0L,b=0.0L,result=0.0L;
+        long double last_result=0.0L;
+        uint32_t physical_pc=0u,physical_status=UINT32_MAX;
         uint32_t flagbits;
+        unsigned int steps;
         enum obfh_uprt_status rc;
+        if (!obfh_upcontext_live_load(&owner,&state,&physical_pc,
+                                     &physical_status,&last_result) ||
+            physical_status!=(uint32_t)OBFH_UPRT_OK)
+            return OBFH_UPRT_INVALID_PROGRAM;
+        pc=physical_pc;
+        steps=state.steps;
         if (steps>=budget) return OBFH_UPRT_BUDGET;
         if (pc>=length) return OBFH_UPRT_NO_RETURN;
         f=code[pc];
@@ -291,28 +333,24 @@ obfh_arm64_upstream_execute(const uint32_t *program,size_t length,
         case OBFH_UPRT_COPY_RETURN:
             if (obfh_upreg_copy(&state,f.d,f.a)!=OBFH_UPREG_OK)
                 return OBFH_UPRT_UNINITIALIZED;
-            /* FALLTHROUGH: encoded source register copy, return dst. */
             rc=obfh_uprt_read(&state,f.d,&result);
             if (rc!=OBFH_UPRT_OK) return rc;
-            *output=result;
-            *out_steps=steps;
-            if (out_trace) {
-                route.count=steps;
-                *out_trace=route;
-            }
-            return OBFH_UPRT_OK;
+            return obfh_uprt_publish_live_result(&owner,&state,pc,steps,
+                       &result,output,out_steps,&route,out_trace);
         case OBFH_UPRT_RETURN:
             rc=obfh_uprt_read(&state,f.a,&result);
             if (rc!=OBFH_UPRT_OK) return rc;
-            *output=result;
-            *out_steps=steps;
-            if (out_trace) {
-                route.count=steps;
-                *out_trace=route;
-            }
-            return OBFH_UPRT_OK;
+            return obfh_uprt_publish_live_result(&owner,&state,pc,steps,
+                       &result,output,out_steps,&route,out_trace);
         default:return OBFH_UPRT_INVALID_PROGRAM;
         }
+        /* A completed nonterminal instruction is committed to physical
+         * bytes BEFORE another instruction can read any register or flag.
+         * C temporary state is discarded at the end of this iteration.
+         */
+        if (!obfh_upcontext_live_store(&owner,&state,(uint32_t)pc,
+                                      (uint32_t)OBFH_UPRT_OK,&last_result))
+            return OBFH_UPRT_INVALID_PROGRAM;
     }
 }
 #endif

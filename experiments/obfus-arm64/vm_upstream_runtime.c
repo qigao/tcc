@@ -55,10 +55,11 @@ static int variant_matrix(void) {
         2.0L,0.0L,3.0L,-2.0L,3.0L,0.0L,1.25L,7.0L,
         0.0L,4.0L,3.0L,1.0L,-1.0L
     };
-    unsigned int cfg,v,op,i,accepted=0u;
+    unsigned int cfg,v,op,i,accepted=0u,physical_modes=0u;
     for (cfg=0u;cfg<8u;++cfg) {
         uint32_t seed=(uint32_t)OBFH_SEED ^ (cfg*UINT32_C(0x30455971));
         uint32_t key=(cfg<<29u)|((UINT32_C(0x5d721300)^seed)&UINT32_C(0x1fffffff));
+        physical_modes|=1u<<((seed>>4u)%4u);
         for (v=0u;v<8u;++v)for (op=0u;op<=UOP_BSHR;++op) {
             upstream_test_program program;
             if (!build_program(&program,seed,key+(v*UINT32_C(3266489917)),v,op))
@@ -98,7 +99,14 @@ static int variant_matrix(void) {
             }
         }
     }
-    if (accepted<5000u) return 81;
+    /* Every original physical layout must actually own the working state
+     * between decoded instructions. No mode may be covered only by a
+     * separate sizeof/offsetof or copy-only test. */
+    if (accepted<5000u || physical_modes!=0x0fu) {
+        fprintf(stderr,"UPRT_LIVE_CONTEXT_MATRIX_FAIL accepted=%u modes=%02x\n",
+                accepted,physical_modes);
+        return 81;
+    }
     return 0;
 }
 

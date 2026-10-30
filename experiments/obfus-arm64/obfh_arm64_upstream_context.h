@@ -259,4 +259,87 @@ static inline int obfh_upcontext_import_3(
     return 1;
 }
 
+
+/* The sole integrated VM still owns all instruction semantics. This union
+ * owns the authoritative encoded state BETWEEN instructions; the existing
+ * obfh_upreg_state is used only as a stack-local decoded staging view for
+ * one instruction, and is immediately committed back to original-layout
+ * physical storage. No second VM/interpreter or pointer alias UB.
+ *
+ * For an emitted call with its own seed, the source's (seed >> 4) % 4 picks
+ * exactly one active union member. A TU can test all four runtime seeds;
+ * the selected ABI typedef above remains bound to its build OBFH_SEED.
+ */
+#define OBFH_UPCONTEXT_LIVE_COOKIE UINT32_C(0x75504358)
+typedef union {
+    obfh_upcontext_layout_0 mode0;
+    obfh_upcontext_layout_1 mode1;
+    obfh_upcontext_layout_2 mode2;
+    obfh_upcontext_layout_3 mode3;
+} obfh_upcontext_live_bytes;
+
+typedef struct {
+    obfh_upcontext_live_bytes physical;
+    uint32_t seed;
+    uint32_t mode;
+    uint32_t cookie;
+} obfh_upcontext_live;
+
+/* Caller must have performed a seed/key-aware obfh_upreg_initialize before
+ * the first store. Every write to an original physical context is complete:
+ * all four encoded slots, controls, flags, PC, steps, status and result.
+ */
+static inline int obfh_upcontext_live_store(
+        obfh_upcontext_live *owner, const obfh_upreg_state *state,
+        uint32_t pc, uint32_t status, const long double *result) {
+    if (!owner || !state || !result ||
+        owner->cookie!=OBFH_UPCONTEXT_LIVE_COOKIE ||
+        owner->seed!=state->seed ||
+        owner->mode!=((owner->seed>>4u)%4u))
+        return 0;
+    switch (owner->mode) {
+    case 0u: return obfh_upcontext_export_0(&owner->physical.mode0,
+                                               state,pc,status,result);
+    case 1u: return obfh_upcontext_export_1(&owner->physical.mode1,
+                                               state,pc,status,result);
+    case 2u: return obfh_upcontext_export_2(&owner->physical.mode2,
+                                               state,pc,status,result);
+    case 3u: return obfh_upcontext_export_3(&owner->physical.mode3,
+                                               state,pc,status,result);
+    default: return 0;
+    }
+}
+static inline int obfh_upcontext_live_load(
+        const obfh_upcontext_live *owner, obfh_upreg_state *state,
+        uint32_t *pc, uint32_t *status, long double *result) {
+    if (!owner || !state || !pc || !status || !result ||
+        owner->cookie!=OBFH_UPCONTEXT_LIVE_COOKIE ||
+        owner->mode!=((owner->seed>>4u)%4u))
+        return 0;
+    switch (owner->mode) {
+    case 0u: return obfh_upcontext_import_0(state,pc,status,result,
+                                     &owner->physical.mode0,owner->seed);
+    case 1u: return obfh_upcontext_import_1(state,pc,status,result,
+                                     &owner->physical.mode1,owner->seed);
+    case 2u: return obfh_upcontext_import_2(state,pc,status,result,
+                                     &owner->physical.mode2,owner->seed);
+    case 3u: return obfh_upcontext_import_3(state,pc,status,result,
+                                     &owner->physical.mode3,owner->seed);
+    default: return 0;
+    }
+}
+static inline int obfh_upcontext_live_initialize(
+        obfh_upcontext_live *owner, uint32_t seed, uint32_t key) {
+    obfh_upreg_state initial;
+    long double initial_result=0.0L;
+    if (!owner ||
+        obfh_upreg_initialize(&initial,seed,key)!=OBFH_UPREG_OK)
+        return 0;
+    memset(owner,0,sizeof *owner);
+    owner->seed=seed;
+    owner->mode=(seed>>4u)%4u;
+    owner->cookie=OBFH_UPCONTEXT_LIVE_COOKIE;
+    return obfh_upcontext_live_store(owner,&initial,0u,0u,&initial_result);
+}
+
 #endif

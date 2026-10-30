@@ -380,6 +380,105 @@ static int test_layout_3(void) {
         return 20+3*10;
     return 0;
 }
+/* The live runtime physical object, not a byte-copy-only adapter, is the
+ * authoritative state owner between decoded original VM instructions.
+ * Exercise all four seed-selected real physical union members in each
+ * compiled native AArch64 binary, including valid PC/flags/control, stale
+ * register masks, no-write-on-invalid and corrupted owner identity.
+ */
+static int live_physical_owner_contract(void) {
+    unsigned int mode,r,k;
+    for (mode=0u;mode<4u;++mode) {
+        const uint32_t seed=((uint32_t)OBFH_SEED &
+                             ~UINT32_C(0x30)) | (mode<<4u);
+        const uint32_t key=UINT32_C(0xa5b6c700)+mode;
+        obfh_upcontext_live owner,before;
+        obfh_upreg_state state,restored,untouched;
+        uint32_t pc=UINT32_MAX,status=UINT32_MAX,flags,ctrl;
+        long double result=-0.0L,readback=1.0L;
+        unsigned char raw[sizeof(long double)],read[sizeof(long double)];
+        uint32_t physical_pc=UINT32_MAX;
+        if (!obfh_upcontext_live_initialize(&owner,seed,key) ||
+            owner.mode!=mode ||
+            !obfh_upcontext_live_load(&owner,&state,&pc,&status,&readback) ||
+            pc!=0u || status!=0u || state.steps!=0u ||
+            state.seed!=seed || state.key!=key ||
+            state.initialized!=0u || state.flags_ready!=0u)
+            return 101;
+        state.steps=mode+7u;
+        for (r=0u;r<4u;++r) {
+            for (k=0u;k<sizeof raw;++k)
+                raw[k]=(unsigned char)((k*29u)^(r*47u+mode));
+            if (obfh_upreg_write(&state,r,raw,sizeof raw)!=OBFH_UPREG_OK ||
+                obfh_upreg_control_write(&state,r,
+                          UINT32_C(0xfedcba98)+r+mode)!=OBFH_UPREG_OK)
+                return 102;
+        }
+        if (obfh_upreg_set_flags(&state,
+                   UINT32_C(0x29)+mode)!=OBFH_UPREG_OK)
+            return 103;
+        state.flags_ready=1u;
+        if (!obfh_upcontext_live_store(&owner,&state,mode+11u,mode+21u,
+                                      &result))
+            return 104;
+        switch(mode) {
+        case 0u: physical_pc=owner.physical.mode0.pc;break;
+        case 1u: physical_pc=owner.physical.mode1.pc;break;
+        case 2u: physical_pc=owner.physical.mode2.pc;break;
+        case 3u: physical_pc=owner.physical.mode3.pc;break;
+        }
+        if (physical_pc!=mode+11u ||
+            !obfh_upcontext_live_load(&owner,&restored,&pc,&status,
+                                      &readback) ||
+            pc!=mode+11u || status!=mode+21u ||
+            restored.steps!=state.steps ||
+            memcmp(&result,&readback,sizeof result)!=0 ||
+            memcmp(&state,&restored,sizeof state)!=0 ||
+            obfh_upreg_get_flags(&restored,&flags)!=OBFH_UPREG_OK ||
+            flags!=UINT32_C(0x29)+mode ||
+            !restored.flags_ready)
+            return 105;
+        /* When VM advances, existing register masks must remain readable. */
+        restored.steps+=100u;
+        for (r=0u;r<4u;++r) {
+            for (k=0u;k<sizeof raw;++k)
+                raw[k]=(unsigned char)((k*29u)^(r*47u+mode));
+            if (obfh_upreg_read(&restored,r,read,sizeof read)!=
+                      OBFH_UPREG_OK ||
+                memcmp(raw,read,sizeof raw)!=0 ||
+                obfh_upreg_control_read(&restored,r,&ctrl)!=OBFH_UPREG_OK ||
+                ctrl!=UINT32_C(0xfedcba98)+r+mode)
+                return 106;
+        }
+        memcpy(&before,&owner,sizeof owner);
+        state.seed^=1u;
+        if (obfh_upcontext_live_store(&owner,&state,2u,3u,&result) ||
+            memcmp(&before,&owner,sizeof owner)!=0)
+            return 107;
+        state.seed^=1u;
+        memset(&untouched,0x5c,sizeof untouched);
+        memcpy(&restored,&untouched,sizeof restored);
+        pc=UINT32_C(0xdecafbadu);status=UINT32_C(0xdecafbadu);
+        memset(&readback,0x5c,sizeof readback);
+        owner.cookie=0u;
+        if (obfh_upcontext_live_load(&owner,&restored,&pc,&status,
+                                     &readback) ||
+            memcmp(&restored,&untouched,sizeof restored)!=0 ||
+            pc!=UINT32_C(0xdecafbadu) ||
+            status!=UINT32_C(0xdecafbadu))
+            return 108;
+        for (k=0u;k<sizeof readback;++k)
+            if (((unsigned char*)&readback)[k]!=0x5cu) return 109;
+        memcpy(&owner,&before,sizeof owner);
+        owner.mode=mode^1u;
+        if (obfh_upcontext_live_load(&owner,&restored,&pc,&status,
+                                     &readback))
+            return 110;
+        memcpy(&owner,&before,sizeof owner);
+    }
+    return 0;
+}
+
 int main(void) {
     int e;
     /* Each original physical ABI form is checked even when the current
@@ -397,6 +496,11 @@ int main(void) {
          (OBFH_SEED>>4u)%4u==1u?sizeof(obfh_upcontext_layout_1):
          (OBFH_SEED>>4u)%4u==2u?sizeof(obfh_upcontext_layout_2):
                                   sizeof(obfh_upcontext_layout_3))) return 90;
+    e=live_physical_owner_contract();
+    if (e) {
+        fprintf(stderr,"OBFH_LIVE_CONTEXT_FAIL: code=%d\n",e);
+        return e;
+    }
     printf("OBFH_CONTEXT_LAYOUTS_PASS: mode=%u longdouble=%u bytes\n",
           (unsigned int)((OBFH_SEED>>4u)%4u),
           (unsigned int)sizeof(long double));
