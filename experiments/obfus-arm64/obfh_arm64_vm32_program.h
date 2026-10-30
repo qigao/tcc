@@ -152,29 +152,35 @@ obfh_arm64_vm32_execute(const uint32_t *program, size_t length,
     return OBFH_VM32_INVALID_WORD;
 }
 
-/* Each source site owns a distinct immutable encoded stream. C GNU statement
- * expressions are supported by the pinned native and Windows ARM64 TinyCC.
- * The caller's expressions evaluate once and only once. All corruption is
- * fail-closed: the source-signature has no error return, therefore abort.
+/* The explicit API must also typecheck in a file-scope __typeof__ query,
+ * just like upstream tests/vm.c. A statement-expression is illegal there.
+ * A const compound-literal program and an unsigned-returning call expression
+ * preserve this source contract. The compiler may place the const program
+ * in rodata or materialize it in read-only-by-contract automatic storage.
  */
-#define OBFH_VM32_RUN(operation,input_a,input_b) ({ \
-    enum { __obfh_vm_site = __COUNTER__, \
-           __obfh_vm_key = OBFH_VM32_KEY(__obfh_vm_site) }; \
-    static const uint32_t __obfh_vm_code[OBFH_VM32_PROGRAM_WORDS] = { \
-        OBFH_VM32_ENCODE(OBFH_VM32_PACK(OBFH_VM32_LOAD_A,0u,0u,0u),__obfh_vm_key,0u), \
-        OBFH_VM32_ENCODE(OBFH_VM32_PACK(OBFH_VM32_LOAD_B,1u,0u,0u),__obfh_vm_key,1u), \
-        OBFH_VM32_ENCODE(OBFH_VM32_PACK((operation),2u,0u,1u),__obfh_vm_key,2u), \
-        OBFH_VM32_ENCODE(OBFH_VM32_PACK(OBFH_VM32_RETURN,0u,2u,0u),__obfh_vm_key,3u) \
-    }; \
-    uint32_t __obfh_vm_a = (uint32_t)(input_a); \
-    uint32_t __obfh_vm_b = (uint32_t)(input_b); \
-    uint32_t __obfh_vm_out = 0u, __obfh_vm_steps = 0u; \
-    if (obfh_arm64_vm32_execute(__obfh_vm_code,OBFH_VM32_PROGRAM_WORDS, \
-            __obfh_vm_key,(operation),__obfh_vm_a,__obfh_vm_b, \
-            &__obfh_vm_out,&__obfh_vm_steps) != OBFH_VM32_OK || \
-        __obfh_vm_steps != OBFH_VM32_PROGRAM_WORDS) abort(); \
-    (unsigned int)__obfh_vm_out; \
-})
+static inline unsigned int obfh_arm64_vm32_call(
+        const uint32_t program[OBFH_VM32_PROGRAM_WORDS], uint32_t key,
+        unsigned int operation, uint32_t input_a, uint32_t input_b) {
+    uint32_t output = 0u, steps = 0u;
+    if (obfh_arm64_vm32_execute(program,OBFH_VM32_PROGRAM_WORDS,
+            key,operation,input_a,input_b,&output,&steps) != OBFH_VM32_OK ||
+        steps != OBFH_VM32_PROGRAM_WORDS) abort();
+    return (unsigned int)output;
+}
+
+/* __COUNTER__ is captured exactly once, then reused in all four encoded
+ * words and the decoder key. Each expression argument is evaluated once
+ * as a function parameter; execution remains in the checked A64 VM32.
+ */
+#define OBFH_VM32_RUN_SITE(op,left,right,site) \
+    obfh_arm64_vm32_call((const uint32_t[OBFH_VM32_PROGRAM_WORDS]) { \
+        OBFH_VM32_ENCODE(OBFH_VM32_PACK(OBFH_VM32_LOAD_A,0u,0u,0u),OBFH_VM32_KEY(site),0u), \
+        OBFH_VM32_ENCODE(OBFH_VM32_PACK(OBFH_VM32_LOAD_B,1u,0u,0u),OBFH_VM32_KEY(site),1u), \
+        OBFH_VM32_ENCODE(OBFH_VM32_PACK((op),2u,0u,1u),OBFH_VM32_KEY(site),2u), \
+        OBFH_VM32_ENCODE(OBFH_VM32_PACK(OBFH_VM32_RETURN,0u,2u,0u),OBFH_VM32_KEY(site),3u) \
+    },OBFH_VM32_KEY(site),(op),(uint32_t)(left),(uint32_t)(right))
+#define OBFH_VM32_RUN(op,left,right) \
+    OBFH_VM32_RUN_SITE(op,left,right,__COUNTER__)
 #define VM_AND(a,b) OBFH_VM32_RUN(OBFH_VM32_AND,a,b)
 #define VM_OR(a,b) OBFH_VM32_RUN(OBFH_VM32_OR,a,b)
 #define VM_XOR(a,b) OBFH_VM32_RUN(OBFH_VM32_XOR,a,b)
