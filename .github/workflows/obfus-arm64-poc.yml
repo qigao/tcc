@@ -245,14 +245,16 @@ jobs:
             echo "::error::TinyCC accepted mismatched immutable obfus VM variant"
             exit 1
           fi
-          # TinyCC may omit the GCC-style quoted assertion message.
-          # Accept ONLY a static-assertion diagnostic, never an arbitrary
-          # compilation failure; emit the original log if the exact text
-          # is unavailable to make the compiler-specific result auditable.
+          # TinyCC expands the C11 _Static_assert to its internal
+          # __error_if_negative bit-field, and omits the user string.
+          # Match the exact observed signature AND source fixture, not an
+          # arbitrary compiler error. All ten positive sites already passed.
           if ! grep -Fq 'Static obfus.h VM variant disagrees with key' \
                 build-obfus/tcc-wrong-seed/static.log; then
             cat build-obfus/tcc-wrong-seed/static.log
-            grep -Eiq 'static.assert|assertion.failed' \
+            grep -Fq "negative width in bit-field '__error_if_negative'" \
+              build-obfus/tcc-wrong-seed/static.log
+            grep -Fq 'vm_upstream_static.c:' \
               build-obfus/tcc-wrong-seed/static.log
           fi
           echo "TCC_UPSTREAM_STATIC_VARIANT_MISMATCH_REJECTED"
