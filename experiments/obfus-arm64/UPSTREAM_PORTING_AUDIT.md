@@ -16,7 +16,7 @@ Initial toolchain: TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893
 | 06 (1165) | Skipped payloads / BREAK_STACK_CFLOW | **BLOCKED:** x86 opcode bytes, ModRM, branch displacement and register clobbers require genuine A64 equivalents; no x86 byte gadgets |
 | 07 (1943) | STACK_PROXY_FUNCTIONS | **BLOCKED:** native stack-frame tricks require full SP/LR, 16-byte alignment, unwind and lifecycle proof |
 | 08 (3046) | Junk primitives and scalar/string transport | Separate pure scalar identities from x86 asm; A64 branch and value transport must preserve flags and clobbers |
-| 09 (3218) | CRT cache and VM value transport | Preserve locking/initialization/ownership; audit compiler atomics, pointer-width transports and DLL lifetime |
+| 09 (3218) | CRT cache and VM value transport | **Input `OBFH_VM_VALUE` transport now has isolated source-equivalent byte codec** (8/16-byte `long double`, nonce, floating tag, four xorshift states, two byte arithmetic transforms, per-byte permutation) with independent ABI golden receipts; CRT cache / DLL lifetime remain untouched, original register encoding and VM transport wiring remain open |
 | 10 (3359) | CFLOW selectors / permutations / graphs | Preserve conditions and randomization semantics, implement new ARM64 branch patterns with explicit byte width/relocations |
 | 11 (4151) | VM register, flag, decode/execute kernel | POC VM32 fixed/flow executors retain one independent codec. The **upstream packed-word codec** now has 10,368 golden vectors and a narrow original-opcode A64 bitwise executor for `LOAD_A/B`, `BAND/BOR/BXOR/BNOT/BSHL/BSHR`, `RETURN`; **upstream 4-register long-double VM, nonces, flags, program variants and full ABI remain open** |
 | 12 (4856) | Inline string/memory kernels | Preserve byte/UTF-8, buffer capacity, aliasing and return semantics; reject missing original macros instead of silent no-ops |
@@ -49,6 +49,8 @@ Initial toolchain: TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893
 - Separate `obfh_arm64_upstream_codec.h` ports **exact** upstream opcode/word/field/layout transforms without adding a new VM execution engine. `vm_upstream_codec.c` independently reproduces the original macro expressions and checks 10,368 vectors across all 1,296 mode combinations against fixed FNV64 `b19831d024873da0`. This test validates byte identity, not key authentication or upstream `Obfh_VirtualMachine` parity. No C/ISA fallback or legacy x86 changes.
 
 - New `obfh_arm64_upstream_vm_bits.h` decodes and **executes the original packed WORD format and opcode numbers** for the strict 4-word unsigned-bitwise subset (real A64 ALU). `vm_upstream_exec.c` exhausts 1,296 profiles × 6 operations × 7 values = 54,432 semantic executions with fail-closed malformed-program and budget tests; it does **not** support upstream encoded long-double register storage, VM program template variations, flags or automatic keyword interception. Keep independent from the prior VM32 POC and do not substitute it as a fallback.
+
+- Original `OBFH_VM_VALUE` input transport is now isolated in `obfh_arm64_upstream_value.h`: byte-preserving object representation and floating/nonce metadata, two arithmetic byte modes, four xorshift maps and ABI-aware 8/16-byte golden fixtures (`vm_upstream_value.c`). It does **not** yet wire original register state or control flags into a production VM. Runtime data corruption is not authenticated; invalid inputs fail without output mutation.
 
 ## Admission after this POC
 
