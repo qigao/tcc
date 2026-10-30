@@ -70,10 +70,13 @@ reached:
     for (a = 0; a < 2; ++a)
         for (b = 0; b < 2; ++b) {
             selected = 0;
-            VM_IF(a)
-            VM_IF(b)
-            selected = 11;
-            VM_ELSE selected = 12;
+            /* Braced outer scope retains the same closest-else binding without
+             * triggering -Wdangling-else under GCC/Clang -Werror. */
+            VM_IF(a) {
+                VM_IF(b)
+                    selected = 11;
+                VM_ELSE selected = 12;
+            }
             if (selected != (a ? (b ? 11 : 12) : 0)) return 18;
         }
     return 0;
