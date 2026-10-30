@@ -1,0 +1,666 @@
+name: ARM64 obfus.h instruction feasibility POC
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'experiments/obfus-arm64/**'
+      - '.github/workflows/obfus-arm64-poc.yml'
+permissions:
+  contents: read
+concurrency:
+  group: obfus-arm64-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux-arm64-native:
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache/tcc-obfus-arm64/${{ matrix.compiler }}
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: 250M
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ccache on Linux ARM64 runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ccache
+          command -v ccache
+          ccache --version
+      - name: Restore ARM64 compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: tcc-obfus-arm64-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.compiler }}-${{ github.sha }}
+          restore-keys: |
+            tcc-obfus-arm64-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.compiler }}-
+      - name: Native ARM64 seed and behavior qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          mkdir -p build-obfus
+          ccache --zero-stats
+          for seed in 0x12345678 0x12345679; do
+            dir="build-obfus/${{ matrix.compiler }}-$seed"
+            mkdir -p "$dir"
+            python3 experiments/obfus-arm64/generate_fixture.py --seed "$seed" --output "$dir/obfh_arm64_fixture.h"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" -I"$dir" \
+              experiments/obfus-arm64/smoke.c -o "$dir/smoke"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_bits.c -o "$dir/vm_bits"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_branches.c -o "$dir/vm_branches"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_program.c -o "$dir/vm_program"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_flow.c -o "$dir/vm_flow"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_codec.c -o "$dir/vm_upstream_codec"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_exec.c -o "$dir/vm_upstream_exec"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_value.c -o "$dir/vm_upstream_value"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_registers.c -o "$dir/vm_upstream_registers"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_runtime.c -o "$dir/vm_upstream_runtime"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_static.c -o "$dir/vm_upstream_static"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_context.c -o "$dir/vm_upstream_context"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_auto_site.c -o "$dir/vm_upstream_auto_site"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_public.c -o "$dir/vm_upstream_public"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_nonce.c -o "$dir/vm_upstream_nonce"
+            readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_bits" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_branches" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_program" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_flow" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_codec" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_exec" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_value" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_registers" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_runtime" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_static" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_context" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_auto_site" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_public" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_nonce" | grep -q 'Machine:.*AArch64'
+            python3 experiments/obfus-arm64/verify_binary.py \
+              --binary "$dir/smoke" --forbid arm64-hidden-poc \
+              --forbid-hex e69687e5ad97e588972de697a5e69cace8aa9e2df09f9492 \
+              --forbid-hex 6669727374007365636f6e64 \
+              --forbid first --forbid second
+            for i in 1 2 3 4 5; do
+              "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"
+              "$dir/vm_program"; "$dir/vm_flow"; "$dir/vm_upstream_codec"
+              "$dir/vm_upstream_exec"; "$dir/vm_upstream_value"
+              "$dir/vm_upstream_registers"; "$dir/vm_upstream_runtime"
+              "$dir/vm_upstream_static"; "$dir/vm_upstream_context"
+              "$dir/vm_upstream_auto_site"; "$dir/vm_upstream_public"
+              "$dir/vm_upstream_nonce"
+            done
+            echo "NATIVE_ARM64_${{ matrix.compiler }}_SEED_${seed}_UPSTREAM_NONCE_PASS"
+          done
+          # Both variants must differ on disk despite identical behavior.
+          even="build-obfus/${{ matrix.compiler }}-0x12345678/smoke"
+          odd="build-obfus/${{ matrix.compiler }}-0x12345679/smoke"
+          if cmp -s "$even" "$odd"; then
+            echo "::error::ARM64 seed variants unexpectedly produced identical binaries"
+            exit 1
+          fi
+          bad="build-obfus/${{ matrix.compiler }}-mismatched-seed"
+          mkdir -p "$bad"
+          python3 experiments/obfus-arm64/generate_fixture.py --seed 0x12345678 --output "$bad/obfh_arm64_fixture.h"
+          if ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DOBFH_SEED=0x12345679u -I"$bad" \
+            experiments/obfus-arm64/smoke.c -o "$bad/rejected" >"$bad/compile.log" 2>&1; then
+            echo "::error::Mismatched ARM64 seed compiled without a guard"
+            exit 1
+          fi
+          grep -Fq 'Encoded fixture seed differs from target compiler seed' "$bad/compile.log"
+          echo "ARM64_WRONG_SEED_REJECTED"
+          if ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DOBFH_SEED=0x12345678u -DOBFH_DISABLE_ANY_OBFUSCATION=1 -I"$bad" \
+            experiments/obfus-arm64/smoke.c -o "$bad/rejected" >"$bad/option.log" 2>&1; then
+            echo "::error::Unsupported obfus.h disable option was silently accepted"
+            exit 1
+          fi
+          grep -Fq 'Original obfus.h options are not implemented in the ARM64 POC.' "$bad/option.log"
+          if ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DOBFH_SEED=0x100000000ULL -I"$bad" \
+            experiments/obfus-arm64/smoke.c -o "$bad/rejected" >"$bad/range.log" 2>&1; then
+            echo "::error::Out-of-range 64-bit build seed was silently accepted"
+            exit 1
+          fi
+          grep -Fq 'OBFH_SEED must fit an unsigned 32-bit build constant.' "$bad/range.log"
+          echo "ARM64_UNSUPPORTED_OPTION_AND_SEED_RANGE_REJECTED"
+          if ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DOBFH_SEED=0x12345678u -DOBFH_STATIC_VARIANT_NEGATIVE_TEST=1 \
+            experiments/obfus-arm64/vm_upstream_static.c -o "$bad/static-rejected" \
+            >"$bad/static.log" 2>&1; then
+            echo "::error::Mismatched immutable obfus VM variant compiled"
+            exit 1
+          fi
+          grep -Fq 'Static obfus.h VM variant disagrees with key' "$bad/static.log"
+          echo "UPSTREAM_STATIC_VARIANT_MISMATCH_REJECTED"
+          ccache -s
+  linux-arm64-tinycc:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned native TinyCC with ARM64 extended assembler
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          git clone https://github.com/TinyCC/tinycc.git tools/tinycc
+          git -C tools/tinycc checkout --detach e23dabed154a8495f3ac1ff3cc9d04fa1c207893
+          (cd tools/tinycc && ./configure --prefix="$GITHUB_WORKSPACE/tools/tcc-installed" && make -j2 && make install)
+      - name: True TinyCC ARM64 codegen and native runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          for seed in 0x12345678 0x12345679; do
+            dir="build-obfus/tcc-$seed"
+            mkdir -p "$dir"
+            python3 experiments/obfus-arm64/generate_fixture.py --seed "$seed" --output "$dir/obfh_arm64_fixture.h"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" -I"$dir" \
+              experiments/obfus-arm64/smoke.c -o "$dir/smoke"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_bits.c -o "$dir/vm_bits"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_branches.c -o "$dir/vm_branches"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_program.c -o "$dir/vm_program"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_flow.c -o "$dir/vm_flow"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_codec.c -o "$dir/vm_upstream_codec"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_exec.c -o "$dir/vm_upstream_exec"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_value.c -o "$dir/vm_upstream_value"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_registers.c -o "$dir/vm_upstream_registers"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_runtime.c -o "$dir/vm_upstream_runtime"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_static.c -o "$dir/vm_upstream_static"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_context.c -o "$dir/vm_upstream_context"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_auto_site.c -o "$dir/vm_upstream_auto_site"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_public.c -o "$dir/vm_upstream_public"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_nonce.c -o "$dir/vm_upstream_nonce"
+            readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_bits" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_branches" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_program" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_flow" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_codec" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_exec" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_value" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_registers" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_runtime" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_static" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_context" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_auto_site" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_public" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_nonce" | grep -q 'Machine:.*AArch64'
+            python3 experiments/obfus-arm64/verify_binary.py \
+              --binary "$dir/smoke" --forbid arm64-hidden-poc \
+              --forbid-hex e69687e5ad97e588972de697a5e69cace8aa9e2df09f9492 \
+              --forbid-hex 6669727374007365636f6e64 \
+              --forbid first --forbid second
+            for i in 1 2 3 4 5; do
+              "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"
+              "$dir/vm_program"; "$dir/vm_flow"; "$dir/vm_upstream_codec"
+              "$dir/vm_upstream_exec"; "$dir/vm_upstream_value"
+              "$dir/vm_upstream_registers"; "$dir/vm_upstream_runtime"
+              "$dir/vm_upstream_static"; "$dir/vm_upstream_context"
+              "$dir/vm_upstream_auto_site"; "$dir/vm_upstream_public"
+              "$dir/vm_upstream_nonce"
+            done
+            echo "NATIVE_TCC_ARM64_SEED_${seed}_UPSTREAM_NONCE_PASS"
+          done
+          if cmp -s build-obfus/tcc-0x12345678/smoke build-obfus/tcc-0x12345679/smoke; then
+            echo "::error::TinyCC AArch64 seed variants are identical"
+            exit 1
+          fi
+          mkdir -p build-obfus/tcc-wrong-seed
+          python3 experiments/obfus-arm64/generate_fixture.py --seed 0x12345678 \
+            --output build-obfus/tcc-wrong-seed/obfh_arm64_fixture.h
+          if tools/tcc-installed/bin/tcc -DOBFH_SEED=0x12345679u \
+            -Ibuild-obfus/tcc-wrong-seed experiments/obfus-arm64/smoke.c \
+            -o build-obfus/tcc-wrong-seed/rejected >build-obfus/tcc-wrong-seed/compile.log 2>&1; then
+            echo "::error::TinyCC accepted mismatched fixture and build seed"
+            exit 1
+          fi
+          grep -Fq 'Encoded fixture seed differs from target compiler seed' \
+            build-obfus/tcc-wrong-seed/compile.log
+          echo "TCC_WRONG_SEED_REJECTED"
+          if tools/tcc-installed/bin/tcc -DOBFH_SEED=0x12345678u \
+            -DOBFH_DISABLE_ANY_OBFUSCATION=1 -Ibuild-obfus/tcc-wrong-seed \
+            experiments/obfus-arm64/smoke.c -o build-obfus/tcc-wrong-seed/rejected \
+            >build-obfus/tcc-wrong-seed/option.log 2>&1; then
+            echo "::error::TinyCC silently accepted unsupported obfus.h option"
+            exit 1
+          fi
+          grep -Fq 'Original obfus.h options are not implemented in the ARM64 POC.' \
+            build-obfus/tcc-wrong-seed/option.log
+          echo "TCC_UNSUPPORTED_OPTION_REJECTED"
+          if tools/tcc-installed/bin/tcc -DOBFH_SEED=0x12345678u \
+            -DOBFH_STATIC_VARIANT_NEGATIVE_TEST=1 \
+            experiments/obfus-arm64/vm_upstream_static.c \
+            -o build-obfus/tcc-wrong-seed/static-rejected \
+            >build-obfus/tcc-wrong-seed/static.log 2>&1; then
+            echo "::error::TinyCC accepted mismatched immutable obfus VM variant"
+            exit 1
+          fi
+          # TinyCC expands the C11 _Static_assert to its internal
+          # __error_if_negative bit-field, and omits the user string.
+          # Match the exact observed signature AND source fixture, not an
+          # arbitrary compiler error. All ten positive sites already passed.
+          if ! grep -Fq 'Static obfus.h VM variant disagrees with key' \
+                build-obfus/tcc-wrong-seed/static.log; then
+            cat build-obfus/tcc-wrong-seed/static.log
+            grep -Fq "negative width in bit-field '__error_if_negative'" \
+              build-obfus/tcc-wrong-seed/static.log
+            grep -Fq 'vm_upstream_static.c:' \
+              build-obfus/tcc-wrong-seed/static.log
+          fi
+          echo "TCC_UPSTREAM_STATIC_VARIANT_MISMATCH_REJECTED"
+  windows-arm64-tcc-build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      # Draft candidate. Pin a reviewed, immutable action commit; do not use master.
+      # This validates toolchain availability/PE identity, not obfus.h ARM64 Release.
+      - id: tcc
+        uses: qigao/vcpkg-cache/.github/actions/setup-tinycc-builder@29317e280bc398ef8b574d2017b4851bfdad3894
+        with:
+          version: "2026-10-29"
+          target: arm64
+          build-type: toolchain-only
+          verify-smoke: "true"
+      - name: Compile protected ARM64 PE with TinyCC and record exact hashes
+        shell: pwsh
+        env:
+          TCC_ARM64: ${{ steps.tcc.outputs.cc }}
+          TCC_SMOKE: ${{ steps.tcc.outputs.smoke }}
+          TCC_ROOT: ${{ steps.tcc.outputs.root }}
+          TCC_VERSION: ${{ steps.tcc.outputs.version }}
+          TCC_RELEASE_QUALIFIED: ${{ steps.tcc.outputs.release-qualified }}
+          TCC_ARCHIVE_SHA256: ${{ steps.tcc.outputs.archive-sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath $env:TCC_ARM64 -PathType Leaf)) {
+            throw 'Verified ARM64 TinyCC compiler output missing'
+          }
+          if ([IO.Path]::GetFileName($env:TCC_ARM64) -ne 'arm64-win32-tcc.exe' -or
+              $env:TCC_SMOKE -ne 'cross-compile-pe-machine' -or
+              $env:TCC_RELEASE_QUALIFIED -ne 'false' -or
+              $env:TCC_VERSION -ne '2026-10-29' -or
+              $env:TCC_ARCHIVE_SHA256 -ne 'd1b20a7a85f572201eb00f5e69361fd73f1bbb53ddfb89b49170f33ad2e778d7') {
+            throw 'TinyCC ARM64 source identity or cross-machine smoke contract mismatch'
+          }
+          New-Item -ItemType Directory -Force build-arm64 | Out-Null
+          $manifest = @{}
+          foreach ($s in @(@{id='even';seed='0x12345678'}, @{id='odd';seed='0x12345679'})) {
+            $dir = "build-arm64/$($s.id)"
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            python experiments/obfus-arm64/generate_fixture.py --seed $s.seed --output "$dir/obfh_arm64_fixture.h"
+            if ($LASTEXITCODE -ne 0) { throw 'Fixture generation failed' }
+            $output = "build-arm64/obfh_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" "-I$dir" 'experiments/obfus-arm64/smoke.c' '-o' $output
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 compilation failed: $($s.id)" }
+            $bytes = [IO.File]::ReadAllBytes((Resolve-Path $output).Path)
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+            if ($peOffset -lt 64 -or $peOffset + 6 -ge $bytes.Length -or
+                $bytes[$peOffset] -ne 0x50 -or $bytes[$peOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($bytes, $peOffset + 4) -ne 0xAA64) {
+              throw "Wrong PE machine: $output"
+            }
+            python experiments/obfus-arm64/verify_binary.py --binary $output `
+              --forbid arm64-hidden-poc `
+              --forbid-hex e69687e5ad97e588972de697a5e69cace8aa9e2df09f9492 `
+              --forbid-hex 6669727374007365636f6e64 `
+              --forbid first --forbid second
+            if ($LASTEXITCODE -ne 0) { throw "Plaintext detection failure: $output" }
+            $manifest["obfh_$($s.id).exe"] = (Get-FileHash $output -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Compile the six VM_* bitwise signatures through real A64 inline assembly.
+            $vmOutput = "build-arm64/obfh_vm_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_bits.c' '-o' $vmOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 VM bitwise compile failed: $($s.id)" }
+            [byte[]]$vmBytes = [IO.File]::ReadAllBytes((Resolve-Path $vmOutput).Path)
+            $vmOffset = [BitConverter]::ToInt32($vmBytes, 0x3c)
+            if ($vmOffset -lt 64 -or $vmOffset + 6 -ge $vmBytes.Length -or
+                $vmBytes[$vmOffset] -ne 0x50 -or $vmBytes[$vmOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($vmBytes, $vmOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 VM PE machine: $vmOutput"
+            }
+            $manifest["obfh_vm_$($s.id).exe"] = (Get-FileHash $vmOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            $branchOutput = "build-arm64/obfh_vm_branch_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_branches.c' '-o' $branchOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 VM branches compile failed: $($s.id)" }
+            [byte[]]$brBytes = [IO.File]::ReadAllBytes((Resolve-Path $branchOutput).Path)
+            $brOffset = [BitConverter]::ToInt32($brBytes, 0x3c)
+            if ($brOffset -lt 64 -or $brOffset + 6 -ge $brBytes.Length -or
+                $brBytes[$brOffset] -ne 0x50 -or $brBytes[$brOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($brBytes, $brOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 VM branch PE machine: $branchOutput"
+            }
+            $manifest["obfh_vm_branch_$($s.id).exe"] = (Get-FileHash $branchOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            $programOutput = "build-arm64/obfh_vm_program_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_program.c' '-o' $programOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 encoded VM compile failed: $($s.id)" }
+            [byte[]]$pgBytes = [IO.File]::ReadAllBytes((Resolve-Path $programOutput).Path)
+            $pgOffset = [BitConverter]::ToInt32($pgBytes, 0x3c)
+            if ($pgOffset -lt 64 -or $pgOffset + 6 -ge $pgBytes.Length -or
+                $pgBytes[$pgOffset] -ne 0x50 -or $pgBytes[$pgOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($pgBytes, $pgOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 encoded VM PE machine: $programOutput"
+            }
+            $manifest["obfh_vm_program_$($s.id).exe"] = (Get-FileHash $programOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Separate encoded-control-flow executable: decoded jumps, bounds and budget.
+            $flowOutput = "build-arm64/obfh_vm_flow_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_flow.c' '-o' $flowOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 VM flow compile failed: $($s.id)" }
+            [byte[]]$flowBytes = [IO.File]::ReadAllBytes((Resolve-Path $flowOutput).Path)
+            $flowOffset = [BitConverter]::ToInt32($flowBytes, 0x3c)
+            if ($flowOffset -lt 64 -or $flowOffset + 6 -ge $flowBytes.Length -or
+                $flowBytes[$flowOffset] -ne 0x50 -or $flowBytes[$flowOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($flowBytes, $flowOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 VM flow PE machine: $flowOutput"
+            }
+            $manifest["obfh_vm_flow_$($s.id).exe"] = (Get-FileHash $flowOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Upstream exact codec parity: 6 opcode x 9 word x 6 field x 4 layout modes.
+            $codecOutput = "build-arm64/obfh_upstream_codec_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_codec.c' '-o' $codecOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 upstream codec compile failed: $($s.id)" }
+            [byte[]]$cdBytes = [IO.File]::ReadAllBytes((Resolve-Path $codecOutput).Path)
+            $cdOffset = [BitConverter]::ToInt32($cdBytes, 0x3c)
+            if ($cdOffset -lt 64 -or $cdOffset + 6 -ge $cdBytes.Length -or
+                $cdBytes[$cdOffset] -ne 0x50 -or $cdBytes[$cdOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($cdBytes, $cdOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 upstream codec PE machine: $codecOutput"
+            }
+            $manifest["obfh_upstream_codec_$($s.id).exe"] = (Get-FileHash $codecOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Execute original packed opcode numbers via real A64 bitwise instructions.
+            $upstreamExec = "build-arm64/obfh_upstream_exec_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_exec.c' '-o' $upstreamExec
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 original packed bitwise execution compile failed: $($s.id)" }
+            [byte[]]$execBytes = [IO.File]::ReadAllBytes((Resolve-Path $upstreamExec).Path)
+            $execOffset = [BitConverter]::ToInt32($execBytes, 0x3c)
+            if ($execOffset -lt 64 -or $execOffset + 6 -ge $execBytes.Length -or
+                $execBytes[$execOffset] -ne 0x50 -or $execBytes[$execOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($execBytes, $execOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 original packed bitwise PE machine: $upstreamExec"
+            }
+            $manifest["obfh_upstream_exec_$($s.id).exe"] = (Get-FileHash $upstreamExec -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Original OBFH_VM_VALUE byte-level transport, ABI-specific size and golden digest.
+            $valueOutput = "build-arm64/obfh_upstream_value_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_value.c' '-o' $valueOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 upstream long-double byte transport compile failed: $($s.id)" }
+            [byte[]]$vBytes = [IO.File]::ReadAllBytes((Resolve-Path $valueOutput).Path)
+            $vOffset = [BitConverter]::ToInt32($vBytes, 0x3c)
+            if ($vOffset -lt 64 -or $vOffset + 6 -ge $vBytes.Length -or
+                $vBytes[$vOffset] -ne 0x50 -or $vBytes[$vOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($vBytes, $vOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 upstream value PE machine: $valueOutput"
+            }
+            $manifest["obfh_upstream_value_$($s.id).exe"] = (Get-FileHash $valueOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Source-equivalent four-register mask, CADD/CXOR/CROL and flag/control store.
+            $regOutput = "build-arm64/obfh_upstream_registers_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_registers.c' '-o' $regOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 upstream register/flag store compile failed: $($s.id)" }
+            [byte[]]$regBytes = [IO.File]::ReadAllBytes((Resolve-Path $regOutput).Path)
+            $regOffset = [BitConverter]::ToInt32($regBytes, 0x3c)
+            if ($regOffset -lt 64 -or $regOffset + 6 -ge $regBytes.Length -or
+                $regBytes[$regOffset] -ne 0x50 -or $regBytes[$regOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($regBytes, $regOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 upstream register PE machine: $regOutput"
+            }
+            $manifest["obfh_upstream_registers_$($s.id).exe"] = (Get-FileHash $regOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # One native original-format VM owner, integrating the exact
+            # packed words + operand nonce + four encoded registers/flags.
+            $runtimeOutput = "build-arm64/obfh_upstream_runtime_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_runtime.c' '-o' $runtimeOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 integrated upstream VM compile failed: $($s.id)" }
+            [byte[]]$rtBytes = [IO.File]::ReadAllBytes((Resolve-Path $runtimeOutput).Path)
+            $rtOffset = [BitConverter]::ToInt32($rtBytes, 0x3c)
+            if ($rtOffset -lt 64 -or $rtOffset + 6 -ge $rtBytes.Length -or
+                $rtBytes[$rtOffset] -ne 0x50 -or $rtBytes[$rtOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($rtBytes, $rtOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 integrated upstream VM PE machine: $runtimeOutput"
+            }
+            $manifest["obfh_upstream_runtime_$($s.id).exe"] = (Get-FileHash $runtimeOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Original 8 variants emitted as immutable static per-site bytecode.
+            $staticOutput = "build-arm64/obfh_upstream_static_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_static.c' '-o' $staticOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 static per-site VM compile failed: $($s.id)" }
+            [byte[]]$staticBytes = [IO.File]::ReadAllBytes((Resolve-Path $staticOutput).Path)
+            $staticOffset = [BitConverter]::ToInt32($staticBytes, 0x3c)
+            if ($staticOffset -lt 64 -or $staticOffset + 6 -ge $staticBytes.Length -or
+                $staticBytes[$staticOffset] -ne 0x50 -or $staticBytes[$staticOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($staticBytes, $staticOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 static per-site VM PE machine: $staticOutput"
+            }
+            # Inspect the ACTUAL AA64 PE image, not merely its C const qualifier.
+            # Independently reconstruct site0/site7/site0_second packed words;
+            # require complete streams in non-writable PE sections and
+            # forbid relocation records from touching their stored bytes.
+            $peAuditOutput = @(python experiments/obfus-arm64/verify_pe_vm_sections.py `
+              --binary $staticOutput --seed $s.seed)
+            if ($LASTEXITCODE -ne 0) {
+              throw "Real ARM64 PE VM/SEH metadata admission failed: $staticOutput"
+            }
+            $peReceipt = @($peAuditOutput | Where-Object {
+              $_.StartsWith('ARM64_PE_VM_SECTIONS_PASS: ')
+            })
+            if ($peReceipt.Count -ne 1) {
+              throw "Expected exactly one PE audit receipt for $staticOutput"
+            }
+            $peReport = $peReceipt[0].Substring('ARM64_PE_VM_SECTIONS_PASS: '.Length) | ConvertFrom-Json
+            if ($peReport.machine -ne 'AA64' -or
+                $peReport.seh_metadata.pdata_entries -lt 1 -or
+                $peReport.seh_metadata.xdata_records -lt 1 -or
+                $peReport.seh_metadata.handler_records -ne 0 -or
+                $peReport.seh_metadata.automatic_handler_dispatch_verified -ne $false -or
+                $peReport.seh_metadata.scope_cleanup_verified -ne $false) {
+              throw "Unexpected ARM64 .pdata/.xdata language SEH claim: $staticOutput"
+            }
+            Write-Host $peReceipt[0]
+            Write-Host "ARM64_PE_NO_LANGUAGE_SEH_HANDLER_RECEIPT: pdata=$($peReport.seh_metadata.pdata_entries) xdata=$($peReport.seh_metadata.xdata_records) handlers=0"
+            $manifest["obfh_upstream_static_$($s.id).exe"] = (Get-FileHash $staticOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Verify all four original physical OBFH_V_CONTEXT ABI layouts.
+            $contextOutput = "build-arm64/obfh_upstream_context_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_context.c' '-o' $contextOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 upstream physical context compile failed: $($s.id)" }
+            [byte[]]$contextBytes = [IO.File]::ReadAllBytes((Resolve-Path $contextOutput).Path)
+            $contextOffset = [BitConverter]::ToInt32($contextBytes, 0x3c)
+            if ($contextOffset -lt 64 -or $contextOffset + 6 -ge $contextBytes.Length -or
+                $contextBytes[$contextOffset] -ne 0x50 -or $contextBytes[$contextOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($contextBytes, $contextOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 upstream context PE machine: $contextOutput"
+            }
+            $manifest["obfh_upstream_context_$($s.id).exe"] = (Get-FileHash $contextOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Automatically derive original source-site key from __COUNTER__/__LINE__.
+            $autoOutput = "build-arm64/obfh_upstream_auto_site_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_auto_site.c' '-o' $autoOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 automatic source-site VM compile failed: $($s.id)" }
+            [byte[]]$autoBytes = [IO.File]::ReadAllBytes((Resolve-Path $autoOutput).Path)
+            $autoOffset = [BitConverter]::ToInt32($autoBytes, 0x3c)
+            if ($autoOffset -lt 64 -or $autoOffset + 6 -ge $autoBytes.Length -or
+                $autoBytes[$autoOffset] -ne 0x50 -or $autoBytes[$autoOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($autoBytes, $autoOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 auto-site VM PE machine: $autoOutput"
+            }
+            $manifest["obfh_upstream_auto_site_$($s.id).exe"] = (Get-FileHash $autoOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Actual original-spelling VM_* source expressions using one
+            # immutable site program per lexical call and same ARM64 VM owner.
+            $publicOutput = "build-arm64/obfh_upstream_public_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_public.c' '-o' $publicOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 public VM API compile failed: $($s.id)" }
+            [byte[]]$publicBytes = [IO.File]::ReadAllBytes((Resolve-Path $publicOutput).Path)
+            $publicOffset = [BitConverter]::ToInt32($publicBytes, 0x3c)
+            if ($publicOffset -lt 64 -or $publicOffset + 6 -ge $publicBytes.Length -or
+                $publicBytes[$publicOffset] -ne 0x50 -or $publicBytes[$publicOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($publicBytes, $publicOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 public VM API PE machine: $publicOutput"
+            }
+            $manifest["obfh_upstream_public_$($s.id).exe"] = (Get-FileHash $publicOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Original VM operands use two independent RND(1,2147483647)
+            # source-site counter draws, not a site-key XOR shortcut.
+            $nonceOutput = "build-arm64/obfh_upstream_nonce_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_nonce.c' '-o' $nonceOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 dual operand nonce compile failed: $($s.id)" }
+            [byte[]]$nonceBytes = [IO.File]::ReadAllBytes((Resolve-Path $nonceOutput).Path)
+            $nonceOffset = [BitConverter]::ToInt32($nonceBytes, 0x3c)
+            if ($nonceOffset -lt 64 -or $nonceOffset + 6 -ge $nonceBytes.Length -or
+                $nonceBytes[$nonceOffset] -ne 0x50 -or $nonceBytes[$nonceOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($nonceBytes, $nonceOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 operand nonce PE machine: $nonceOutput"
+            }
+            $manifest["obfh_upstream_nonce_$($s.id).exe"] = (Get-FileHash $nonceOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          if ($manifest['obfh_even.exe'] -eq $manifest['obfh_odd.exe']) { throw 'Seed variants are identical' }
+          if ($manifest['obfh_vm_even.exe'] -eq $manifest['obfh_vm_odd.exe']) { throw 'VM seed variants are identical' }
+          if ($manifest['obfh_vm_branch_even.exe'] -eq $manifest['obfh_vm_branch_odd.exe']) { throw 'VM branch seed variants are identical' }
+          if ($manifest['obfh_vm_program_even.exe'] -eq $manifest['obfh_vm_program_odd.exe']) { throw 'Encoded VM seed variants are identical' }
+          if ($manifest['obfh_vm_flow_even.exe'] -eq $manifest['obfh_vm_flow_odd.exe']) { throw 'VM flow seed variants are identical' }
+          if ($manifest['obfh_upstream_codec_even.exe'] -eq $manifest['obfh_upstream_codec_odd.exe']) { throw 'Upstream codec seed variants are identical' }
+          if ($manifest['obfh_upstream_exec_even.exe'] -eq $manifest['obfh_upstream_exec_odd.exe']) { throw 'Upstream bitwise execution seed variants are identical' }
+          if ($manifest['obfh_upstream_value_even.exe'] -eq $manifest['obfh_upstream_value_odd.exe']) { throw 'Upstream operand-value seed variants are identical' }
+          if ($manifest['obfh_upstream_registers_even.exe'] -eq $manifest['obfh_upstream_registers_odd.exe']) { throw 'Upstream encoded-register seed variants are identical' }
+          if ($manifest['obfh_upstream_runtime_even.exe'] -eq $manifest['obfh_upstream_runtime_odd.exe']) { throw 'Upstream integrated VM seed variants are identical' }
+          if ($manifest['obfh_upstream_static_even.exe'] -eq $manifest['obfh_upstream_static_odd.exe']) { throw 'Static per-site obfus VM variants are identical' }
+          if ($manifest['obfh_upstream_context_even.exe'] -eq $manifest['obfh_upstream_context_odd.exe']) { throw 'Original physical context seed variants are identical' }
+          if ($manifest['obfh_upstream_auto_site_even.exe'] -eq $manifest['obfh_upstream_auto_site_odd.exe']) { throw 'Automatic per-site VM seed variants are identical' }
+          if ($manifest['obfh_upstream_public_even.exe'] -eq $manifest['obfh_upstream_public_odd.exe']) { throw 'Original public VM source macro seed variants are identical' }
+          if ($manifest['obfh_upstream_nonce_even.exe'] -eq $manifest['obfh_upstream_nonce_odd.exe']) { throw 'Original VM operand nonce seed variants are identical' }
+          $manifest | ConvertTo-Json | Set-Content -Encoding utf8 build-arm64/manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm64-tcc-obfuscation-poc
+          path: build-arm64/obfh_*.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm64-tcc-obfuscation-provenance
+          path: build-arm64/manifest.json
+          if-no-files-found: error
+  windows-arm64-native:
+    runs-on: windows-11-vs2026-arm
+    needs: windows-arm64-tcc-build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: arm64-tcc-obfuscation-poc
+          path: bin
+      - uses: actions/download-artifact@v4
+        with:
+          name: arm64-tcc-obfuscation-provenance
+          path: bin
+      - name: Native ARM64 hardware, PE provenance and runtime 10x per seed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($arch -ne 'Arm64' -or -not [Environment]::Is64BitProcess) { throw "Real ARM64 required: $arch" }
+          $manifest = Get-Content bin/manifest.json -Raw | ConvertFrom-Json -AsHashtable
+          foreach ($name in @('obfh_even.exe','obfh_odd.exe','obfh_vm_even.exe','obfh_vm_odd.exe','obfh_vm_branch_even.exe','obfh_vm_branch_odd.exe','obfh_vm_program_even.exe','obfh_vm_program_odd.exe','obfh_vm_flow_even.exe','obfh_vm_flow_odd.exe','obfh_upstream_codec_even.exe','obfh_upstream_codec_odd.exe','obfh_upstream_exec_even.exe','obfh_upstream_exec_odd.exe','obfh_upstream_value_even.exe','obfh_upstream_value_odd.exe','obfh_upstream_registers_even.exe','obfh_upstream_registers_odd.exe','obfh_upstream_runtime_even.exe','obfh_upstream_runtime_odd.exe','obfh_upstream_static_even.exe','obfh_upstream_static_odd.exe','obfh_upstream_context_even.exe','obfh_upstream_context_odd.exe','obfh_upstream_auto_site_even.exe','obfh_upstream_auto_site_odd.exe','obfh_upstream_public_even.exe','obfh_upstream_public_odd.exe','obfh_upstream_nonce_even.exe','obfh_upstream_nonce_odd.exe')) {
+            $path = (Resolve-Path (Join-Path bin $name)).Path
+            [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
+            $offset = [BitConverter]::ToInt32($bytes, 0x3c)
+            if ($offset -lt 64 -or $offset + 6 -ge $bytes.Length -or
+                $bytes[$offset] -ne 0x50 -or $bytes[$offset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($bytes, $offset + 4) -ne 0xAA64) { throw "Wrong PE machine: $name" }
+            $digest = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($digest -ne $manifest[$name]) { throw "Artifact digest mismatch: $name" }
+            for ($i = 0; $i -lt 10; ++$i) {
+              if ($name -eq 'obfh_upstream_static_even.exe' -or $name -eq 'obfh_upstream_static_odd.exe') {
+                # Require a live image-base delta, actual DIR64 relocation
+                # application and loader-registered .pdata function entry.
+                # A file header or merely running the EXE is NOT sufficient.
+                $nativeOutput = @(& $path)
+                if ($LASTEXITCODE -ne 0) {
+                  throw "ARM64 native loader/ABI fail $name iteration $i exit $LASTEXITCODE"
+                }
+                # One independent receipt per native OS subsystem.
+                # A .pdata lookup alone does not qualify stack walking,
+                # vectored delivery is not frame-based SEH, and a callback
+                # is not proof of GUARD_CF (currently not advertised).
+                foreach ($marker in @(
+                  'ARM64_NATIVE_LOADER_RELOC_PDATA_PASS: ',
+                  'ARM64_NATIVE_UNWIND_STACKWALK_PASS: ',
+                  'ARM64_NATIVE_EXCEPTION_CONTEXT_VIRTUAL_UNWIND_PASS: ',
+                  'ARM64_NATIVE_EXCEPTION_NONVOLATILE_RESTORE_PASS: ',
+                  'ARM64_NATIVE_VECTORED_EXCEPTION_DISPATCH_PASS: ',
+                  'ARM64_NATIVE_WINDOWS_CALLBACK_PASS: '
+                )) {
+                  $receipt = @($nativeOutput | Where-Object {
+                    $_.StartsWith($marker)
+                  })
+                  if ($receipt.Count -ne 1) {
+                    throw "Missing or duplicate native ABI receipt $marker for $name run $i"
+                  }
+                  Write-Host $receipt[0]
+                }
+              } else {
+                & $path
+                if ($LASTEXITCODE -ne 0) { throw "ARM64 native runtime fail $name iteration $i exit $LASTEXITCODE" }
+              }
+            }
+            if ($name -eq 'obfh_upstream_static_even.exe' -or $name -eq 'obfh_upstream_static_odd.exe') {
+              # A separate native child-process invocation: RtlUnwindEx
+              # actually resumes a specified outer TinyCC frame, unlike
+              # the per-run RtlVirtualUnwind copy-only admission above.
+              # This is manual phase-two unwind, NOT __finally support.
+              for ($j = 0; $j -lt 10; ++$j) {
+                $phase2Output = @(& $path '--phase2-unwind')
+                if ($LASTEXITCODE -ne 0) {
+                  throw "ARM64 destructive unwind RED for $name iteration $j (exit $LASTEXITCODE)"
+                }
+                $receipt = @($phase2Output | Where-Object {
+                  $_.StartsWith('ARM64_NATIVE_DESTRUCTIVE_UNWIND_PASS: ')
+                })
+                if ($receipt.Count -ne 1) {
+                  throw "Missing or duplicate destructive-unwind receipt $name iteration $j"
+                }
+                if ($receipt[0] -notlike '*nonvolatile_restored=1') {
+                  throw "Live destructive unwind did not restore all nonvolatiles: $name run $j"
+                }
+                Write-Host $receipt[0]
+              }
+            }
+            Write-Host "ARM64_TCC_NATIVE_PASS: $name (10 runs)"
+          }
