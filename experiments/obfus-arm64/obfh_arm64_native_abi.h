@@ -126,14 +126,23 @@ static int obfh_native_stack_walk_contract(
 
 #define OBFH_NATIVE_EXCEPTION_CODE ((DWORD)0xe04f4248u)
 static volatile LONG obfh_native_veh_seen;
+static volatile DWORD obfh_native_veh_flags;
+static volatile DWORD obfh_native_veh_callback_thread;
+static volatile LONG obfh_native_veh_had_context;
 static DWORD obfh_native_veh_thread;
 static LONG CALLBACK obfh_native_vectored_handler(
         struct _EXCEPTION_POINTERS *info) {
-    if(!info || !info->ExceptionRecord || !info->ContextRecord ||
-       info->ExceptionRecord->ExceptionCode!=OBFH_NATIVE_EXCEPTION_CODE ||
-       info->ExceptionRecord->ExceptionFlags!=0u ||
-       GetCurrentThreadId()!=obfh_native_veh_thread)
+    /* Accept only our dedicated continuable private exception. Save all
+     * other flags for a STRICT post-resume assertion. This distinguishes
+     * "handler never invoked" from "event delivered but unexpected flags"
+     * without accepting those unexpected flags as successful evidence.
+     */
+    if(!info || !info->ExceptionRecord ||
+       info->ExceptionRecord->ExceptionCode!=OBFH_NATIVE_EXCEPTION_CODE)
         return EXCEPTION_CONTINUE_SEARCH;
+    obfh_native_veh_flags=info->ExceptionRecord->ExceptionFlags;
+    obfh_native_veh_callback_thread=GetCurrentThreadId();
+    obfh_native_veh_had_context=info->ContextRecord!=(void *)0;
     ++obfh_native_veh_seen;
     return EXCEPTION_CONTINUE_EXECUTION;
 }
@@ -141,15 +150,24 @@ static int obfh_native_exception_dispatch_contract(void) {
     PVOID token;
     ULONG removed;
     obfh_native_veh_seen=0;
+    obfh_native_veh_flags=UINT32_MAX;
+    obfh_native_veh_callback_thread=0u;
+    obfh_native_veh_had_context=0;
     obfh_native_veh_thread=GetCurrentThreadId();
     token=AddVectoredExceptionHandler(1u,obfh_native_vectored_handler);
     if(!token) return 86;
-    /* This tests native ARM64 exception delivery/continue, not a
-     * frame-based __try/__except stack unwind through the VM.
+    fprintf(stderr,"ARM64_VEH_GATE_BEGIN: thread=%lu handler_installed=1\n",
+            (unsigned long)obfh_native_veh_thread);
+    fflush(stderr);
+    /* Continuable native delivery; if the OS cannot resume, this is a
+     * genuine RED and we MUST NOT swallow the process exit in the CI.
      */
     RaiseException(OBFH_NATIVE_EXCEPTION_CODE,0u,0u,(const ULONG_PTR*)0);
     removed=RemoveVectoredExceptionHandler(token);
-    if(!removed || obfh_native_veh_seen!=1) return 87;
+    if(!removed || obfh_native_veh_seen!=1 ||
+       obfh_native_veh_flags!=0u ||
+       obfh_native_veh_callback_thread!=obfh_native_veh_thread ||
+       !obfh_native_veh_had_context) return 87;
     puts("ARM64_NATIVE_VECTORED_EXCEPTION_DISPATCH_PASS: one continuable "
          "same-thread exception, handler retired");
     return 0;
@@ -203,8 +221,12 @@ static int obfh_native_windows_abi_contract(void) {
     if(!lookup) return 92;
     rc=obfh_native_stack_walk_contract(module,lookup);
     if(rc) return rc;
-    rc=obfh_native_exception_dispatch_contract();
+    /* Prove Windows-to-TinyCC ordinary callback ABI independently BEFORE
+     * attempting the continuable exception path. The latter remains RED
+     * if the registered exception handler is never actually invoked.
+     */
+    rc=obfh_native_windows_callback_contract();
     if(rc) return rc;
-    return obfh_native_windows_callback_contract();
+    return obfh_native_exception_dispatch_contract();
 }
 #endif
