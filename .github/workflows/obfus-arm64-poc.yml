@@ -474,6 +474,15 @@ jobs:
                 [BitConverter]::ToUInt16($staticBytes, $staticOffset + 4) -ne 0xAA64) {
               throw "Wrong TinyCC ARM64 static per-site VM PE machine: $staticOutput"
             }
+            # Inspect the ACTUAL AA64 PE image, not merely its C const qualifier.
+            # Independently reconstruct site0/site7/site0_second packed words;
+            # require complete streams in non-writable PE sections and
+            # forbid relocation records from touching their stored bytes.
+            python experiments/obfus-arm64/verify_pe_vm_sections.py `
+              --binary $staticOutput --seed $s.seed
+            if ($LASTEXITCODE -ne 0) {
+              throw "Real ARM64 PE VM section/relocation admission failed: $staticOutput"
+            }
             $manifest["obfh_upstream_static_$($s.id).exe"] = (Get-FileHash $staticOutput -Algorithm SHA256).Hash.ToLowerInvariant()
             # Verify all four original physical OBFH_V_CONTEXT ABI layouts.
             $contextOutput = "build-arm64/obfh_upstream_context_$($s.id).exe"
