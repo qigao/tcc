@@ -125,10 +125,95 @@ static int obfh_native_stack_walk_contract(
 }
 
 #define OBFH_NATIVE_EXCEPTION_CODE ((DWORD)0xe04f4248u)
+
+/* The exception occurs below three real TinyCC nonleaf stack frames.
+ * RtlVirtualUnwind uses a COPY of the OS exception CONTEXT, never the
+ * live context. This qualifies actual exception-context metadata only;
+ * language-specific __try/__finally and destructive cleanup remain open.
+ */
+typedef void *(WINAPI *obfh_native_virtual_unwind_t)(
+        DWORD,unsigned long long,unsigned long long,void *,
+        CONTEXT *,void **,unsigned long long *,void *);
+static obfh_native_virtual_unwind_t obfh_native_virtual_unwind;
+static obfh_native_lookup_t obfh_native_exception_lookup;
+static void *obfh_native_exception_expected[3];
+static unsigned long long obfh_native_exception_image;
+static volatile LONG obfh_native_exception_unwind_error;
+static volatile LONG obfh_native_exception_unwind_frames;
+static volatile LONG obfh_native_exception_unwind_steps;
+static __attribute__((noinline)) unsigned int obfh_native_exception_leaf(
+        unsigned int cookie) {
+    volatile ULONG frame[27];
+    unsigned int i;
+    for(i=0u;i<27u;++i) frame[i]=(ULONG)(cookie+i*19u);
+    RaiseException(OBFH_NATIVE_EXCEPTION_CODE,0u,0u,(const ULONG_PTR*)0);
+    obfh_native_stack_sink^=frame[9];
+    return cookie+3u;
+}
+static __attribute__((noinline)) unsigned int obfh_native_exception_middle(
+        unsigned int cookie) {
+    volatile ULONG frame[29];
+    unsigned int i,r;
+    for(i=0u;i<29u;++i) frame[i]=(ULONG)(cookie+i*11u);
+    r=obfh_native_exception_leaf(cookie);
+    obfh_native_stack_sink^=frame[7];
+    return r+5u;
+}
+static __attribute__((noinline)) unsigned int obfh_native_exception_outer(
+        unsigned int cookie) {
+    volatile ULONG frame[31];
+    unsigned int i,r;
+    for(i=0u;i<31u;++i) frame[i]=(ULONG)(cookie+i*13u);
+    r=obfh_native_exception_middle(cookie);
+    obfh_native_stack_sink^=frame[5];
+    return r+7u;
+}
+static int obfh_native_virtual_exception_walk(const CONTEXT *original) {
+    CONTEXT context;
+    unsigned int i,found=0u;
+    if(!original || !obfh_native_virtual_unwind ||
+       !obfh_native_exception_lookup) return 1;
+    context=*original; /* Preserve original exception CONTEXT. */
+    for(i=0u;i<48u && found<3u;++i) {
+        unsigned long long base=0u;
+        unsigned long long pc=(unsigned long long)context.Pc;
+        unsigned long long control_pc=pc-(i ? 4u : 0u);
+        unsigned long long old_sp=(unsigned long long)context.Sp;
+        unsigned long long establisher=0u;
+        void *handler_data=(void *)0;
+        void *entry;
+        int expected;
+        if(pc<4u || !old_sp || (old_sp&15u)!=0u) return 2;
+        entry=obfh_native_exception_lookup(control_pc,&base,(void *)0);
+        expected=(entry && base==obfh_native_exception_image &&
+                  entry==obfh_native_exception_expected[found]);
+        if(entry) {
+            obfh_native_virtual_unwind(0u,base,control_pc,entry,
+                   &context,&handler_data,&establisher,(void *)0);
+        } else {
+            /* Leaf without .pdata: no fabricated frame size. */
+            if(!context.Lr || (unsigned long long)context.Lr==pc) return 3;
+            context.Pc=context.Lr;
+        }
+        if((unsigned long long)context.Sp<old_sp ||
+           (unsigned long long)context.Pc==pc ||
+           (unsigned long long)context.Pc==0u) return 4;
+        if(expected) {
+            /* Every qualifying TinyCC nonleaf frame reclaims stack. */
+            if(!establisher ||
+               (unsigned long long)context.Sp<=old_sp) return 5;
+            ++found;
+        }
+    }
+    obfh_native_exception_unwind_frames=(LONG)found;
+    obfh_native_exception_unwind_steps=(LONG)i;
+    return found==3u ? 0 : 6;
+}
 static volatile LONG obfh_native_veh_seen;
 static volatile DWORD obfh_native_veh_flags;
 static volatile DWORD obfh_native_veh_callback_thread;
 static volatile LONG obfh_native_veh_had_context;
+static volatile LONG obfh_native_veh_unwind_context_ok;
 static DWORD obfh_native_veh_thread;
 static LONG CALLBACK obfh_native_vectored_handler(
         struct _EXCEPTION_POINTERS *info) {
@@ -143,6 +228,11 @@ static LONG CALLBACK obfh_native_vectored_handler(
     obfh_native_veh_flags=info->ExceptionRecord->ExceptionFlags;
     obfh_native_veh_callback_thread=GetCurrentThreadId();
     obfh_native_veh_had_context=info->ContextRecord!=(void *)0;
+    obfh_native_exception_unwind_error=
+        obfh_native_virtual_exception_walk(info->ContextRecord);
+    obfh_native_veh_unwind_context_ok=
+        obfh_native_exception_unwind_error==0;
+
     ++obfh_native_veh_seen;
     return EXCEPTION_CONTINUE_EXECUTION;
 }
@@ -153,7 +243,38 @@ static int obfh_native_exception_dispatch_contract(void) {
     obfh_native_veh_flags=UINT32_MAX;
     obfh_native_veh_callback_thread=0u;
     obfh_native_veh_had_context=0;
+    obfh_native_veh_unwind_context_ok=0;
+    obfh_native_exception_unwind_error=-1;
+    obfh_native_exception_unwind_frames=0;
+    obfh_native_exception_unwind_steps=0;
+
     obfh_native_veh_thread=GetCurrentThreadId();
+    {
+        HMODULE kernel=GetModuleHandleA("kernel32.dll");
+        HMODULE ntdll=GetModuleHandleA("ntdll.dll");
+        unsigned long long base=0u;
+        void *functions[3];
+        unsigned int i;
+        if(!kernel || !ntdll) return 93;
+        obfh_native_exception_lookup=(obfh_native_lookup_t)(void *)
+                 GetProcAddress(kernel,"RtlLookupFunctionEntry");
+        obfh_native_virtual_unwind=(obfh_native_virtual_unwind_t)(void *)
+                 GetProcAddress(ntdll,"RtlVirtualUnwind");
+        if(!obfh_native_exception_lookup || !obfh_native_virtual_unwind)
+            return 94;
+        functions[0]=(void *)(uintptr_t)(void *)&obfh_native_exception_leaf;
+        functions[1]=(void *)(uintptr_t)(void *)&obfh_native_exception_middle;
+        functions[2]=(void *)(uintptr_t)(void *)&obfh_native_exception_outer;
+        obfh_native_exception_image=(unsigned long long)(uintptr_t)(void *)
+                 GetModuleHandleA((const char *)0);
+        for(i=0u;i<3u;++i) {
+            obfh_native_exception_expected[i]=obfh_native_exception_lookup(
+                 (unsigned long long)(uintptr_t)functions[i],&base,(void *)0);
+            if(!obfh_native_exception_expected[i] ||
+               base!=obfh_native_exception_image) return 95;
+        }
+    }
+
     token=AddVectoredExceptionHandler(1u,obfh_native_vectored_handler);
     if(!token) return 86;
     fprintf(stderr,"ARM64_VEH_GATE_BEGIN: thread=%lu handler_installed=1\n",
@@ -162,7 +283,9 @@ static int obfh_native_exception_dispatch_contract(void) {
     /* Continuable native delivery; if the OS cannot resume, this is a
      * genuine RED and we MUST NOT swallow the process exit in the CI.
      */
-    RaiseException(OBFH_NATIVE_EXCEPTION_CODE,0u,0u,(const ULONG_PTR*)0);
+    { unsigned int observed=obfh_native_exception_outer(0x2719u);
+      if(observed!=0x2728u) return 96;
+    }
     removed=RemoveVectoredExceptionHandler(token);
     /* Windows adds its internal EXCEPTION_SOFTWARE_ORIGINATE (0x80)
      * to a software-raised continuable exception. This is *not* the
@@ -174,7 +297,8 @@ static int obfh_native_exception_dispatch_contract(void) {
        (obfh_native_veh_flags & ~UINT32_C(0x80))!=0u ||
        (obfh_native_veh_flags & EXCEPTION_NONCONTINUABLE)!=0u ||
        obfh_native_veh_callback_thread!=obfh_native_veh_thread ||
-       !obfh_native_veh_had_context) {
+       !obfh_native_veh_had_context ||
+       !obfh_native_veh_unwind_context_ok) {
         fprintf(stderr,"ARM64_VEH_POST_RED: removed=%lu seen=%ld "
                 "flags=%08lx callback_tid=%lu expected_tid=%lu "
                 "has_CONTEXT=%ld\n",
@@ -183,8 +307,15 @@ static int obfh_native_exception_dispatch_contract(void) {
                 (unsigned long)obfh_native_veh_callback_thread,
                 (unsigned long)obfh_native_veh_thread,
                 (long)obfh_native_veh_had_context);
+        fprintf(stderr,"ARM64_EXCEPTION_CONTEXT_UNWIND_RED: reason=%ld frames=%ld steps=%ld\n",
+                (long)obfh_native_exception_unwind_error,
+                (long)obfh_native_exception_unwind_frames,
+                (long)obfh_native_exception_unwind_steps);
         return 87;
     }
+    printf("ARM64_NATIVE_EXCEPTION_CONTEXT_VIRTUAL_UNWIND_PASS: frames=%ld steps=%ld\n",
+           (long)obfh_native_exception_unwind_frames,
+           (long)obfh_native_exception_unwind_steps);
     printf("ARM64_NATIVE_VECTORED_EXCEPTION_DISPATCH_PASS: "
            "one continuable same-thread exception, handler retired, "
            "os_software_origin_flags=%08lx\n",
