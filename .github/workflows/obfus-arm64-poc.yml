@@ -111,7 +111,11 @@ jobs:
             readelf -h "$dir/vm_upstream_auto_site" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_public" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_nonce" | grep -q 'Machine:.*AArch64'
-            python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
+            python3 experiments/obfus-arm64/verify_binary.py \
+              --binary "$dir/smoke" --forbid arm64-hidden-poc \
+              --forbid-hex e69687e5ad97e588972de697a5e69cace8aa9e2df09f9492 \
+              --forbid-hex 6669727374007365636f6e64 \
+              --forbid first --forbid second
             for i in 1 2 3 4 5; do
               "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"
               "$dir/vm_program"; "$dir/vm_flow"; "$dir/vm_upstream_codec"
@@ -231,7 +235,11 @@ jobs:
             readelf -h "$dir/vm_upstream_auto_site" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_public" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_nonce" | grep -q 'Machine:.*AArch64'
-            python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
+            python3 experiments/obfus-arm64/verify_binary.py \
+              --binary "$dir/smoke" --forbid arm64-hidden-poc \
+              --forbid-hex e69687e5ad97e588972de697a5e69cace8aa9e2df09f9492 \
+              --forbid-hex 6669727374007365636f6e64 \
+              --forbid first --forbid second
             for i in 1 2 3 4 5; do
               "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"
               "$dir/vm_program"; "$dir/vm_flow"; "$dir/vm_upstream_codec"
@@ -341,7 +349,11 @@ jobs:
                 [BitConverter]::ToUInt16($bytes, $peOffset + 4) -ne 0xAA64) {
               throw "Wrong PE machine: $output"
             }
-            python experiments/obfus-arm64/verify_binary.py --binary $output --forbid arm64-hidden-poc
+            python experiments/obfus-arm64/verify_binary.py --binary $output `
+              --forbid arm64-hidden-poc `
+              --forbid-hex e69687e5ad97e588972de697a5e69cace8aa9e2df09f9492 `
+              --forbid-hex 6669727374007365636f6e64 `
+              --forbid first --forbid second
             if ($LASTEXITCODE -ne 0) { throw "Plaintext detection failure: $output" }
             $manifest["obfh_$($s.id).exe"] = (Get-FileHash $output -Algorithm SHA256).Hash.ToLowerInvariant()
             # Compile the six VM_* bitwise signatures through real A64 inline assembly.
