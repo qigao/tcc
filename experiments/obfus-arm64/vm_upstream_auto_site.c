@@ -56,14 +56,29 @@ static int compare_site(const obfh_sc_descriptor *s,
     unsigned int i,k,slot;
     uint32_t key=independently_derived_key(site,line,s->seed);
     long double out;
-    if (s->key!=key || s->variant!=((s->key>>24u)&7u) ||
-        !build_program(&dynamic,s->seed,s->key,
-                       s->variant,s->operation) ||
-        s->length!=dynamic.length ||
-        memcmp(s->words,dynamic.words,s->length*sizeof(uint32_t))!=0) {
-        fprintf(stderr,"UPAUTO_BYTE_MISMATCH site=%u variant=%u line=%u\n",
-                id,s->variant,line);
+    if (s->key!=key) {
+        fprintf(stderr,"UPAUTO_KEY_MISMATCH site=%u line=%u counter=%u actual=%08x expected=%08x\n",
+                id,line,site,s->key,key);
         return 10;
+    }
+    if (s->variant!=((s->key>>24u)&7u) ||
+        !build_program(&dynamic,s->seed,s->key,
+                       s->variant,s->operation)) {
+        fprintf(stderr,"UPAUTO_VARIANT_MISMATCH site=%u variant=%u key=%08x\n",
+                id,s->variant,s->key);
+        return 11;
+    }
+    if (s->length!=dynamic.length) {
+        fprintf(stderr,"UPAUTO_LENGTH_MISMATCH site=%u actual=%u reference=%u\n",
+                id,(unsigned int)s->length,(unsigned int)dynamic.length);
+        return 12;
+    }
+    for (i=0u;i<s->length;++i) {
+        if (s->words[i]!=dynamic.words[i]) {
+            fprintf(stderr,"UPAUTO_BYTE_MISMATCH site=%u variant=%u line=%u pc=%u actual=%08x expected=%08x key=%08x\n",
+                    id,s->variant,line,i,s->words[i],dynamic.words[i],s->key);
+            return 13;
+        }
     }
     for(i=(unsigned int)s->length;i<15u;++i)
         if(s->words[i]!=0u) return 11;
