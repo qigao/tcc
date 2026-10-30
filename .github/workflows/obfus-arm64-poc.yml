@@ -63,13 +63,17 @@ jobs:
             ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
               -D"OBFH_SEED=${seed}u" \
               experiments/obfus-arm64/vm_program.c -o "$dir/vm_program"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_flow.c -o "$dir/vm_flow"
             readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_bits" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_branches" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_program" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_flow" | grep -q 'Machine:.*AArch64'
             python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
-            for i in 1 2 3 4 5; do "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"; "$dir/vm_program"; done
-            echo "NATIVE_ARM64_${{ matrix.compiler }}_SEED_${seed}_VM_PROGRAM_PASS"
+            for i in 1 2 3 4 5; do "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"; "$dir/vm_program"; "$dir/vm_flow"; done
+            echo "NATIVE_ARM64_${{ matrix.compiler }}_SEED_${seed}_VM_FLOW_PASS"
           done
           # Both variants must differ on disk despite identical behavior.
           even="build-obfus/${{ matrix.compiler }}-0x12345678/smoke"
@@ -133,13 +137,16 @@ jobs:
               experiments/obfus-arm64/vm_branches.c -o "$dir/vm_branches"
             tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
               experiments/obfus-arm64/vm_program.c -o "$dir/vm_program"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_flow.c -o "$dir/vm_flow"
             readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_bits" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_branches" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_program" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_flow" | grep -q 'Machine:.*AArch64'
             python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
-            for i in 1 2 3 4 5; do "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"; "$dir/vm_program"; done
-            echo "NATIVE_TCC_ARM64_SEED_${seed}_VM_PROGRAM_PASS"
+            for i in 1 2 3 4 5; do "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"; "$dir/vm_program"; "$dir/vm_flow"; done
+            echo "NATIVE_TCC_ARM64_SEED_${seed}_VM_FLOW_PASS"
           done
           if cmp -s build-obfus/tcc-0x12345678/smoke build-obfus/tcc-0x12345679/smoke; then
             echo "::error::TinyCC AArch64 seed variants are identical"
@@ -255,11 +262,24 @@ jobs:
               throw "Wrong TinyCC ARM64 encoded VM PE machine: $programOutput"
             }
             $manifest["obfh_vm_program_$($s.id).exe"] = (Get-FileHash $programOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Separate encoded-control-flow executable: decoded jumps, bounds and budget.
+            $flowOutput = "build-arm64/obfh_vm_flow_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_flow.c' '-o' $flowOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 VM flow compile failed: $($s.id)" }
+            [byte[]]$flowBytes = [IO.File]::ReadAllBytes((Resolve-Path $flowOutput).Path)
+            $flowOffset = [BitConverter]::ToInt32($flowBytes, 0x3c)
+            if ($flowOffset -lt 64 -or $flowOffset + 6 -ge $flowBytes.Length -or
+                $flowBytes[$flowOffset] -ne 0x50 -or $flowBytes[$flowOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($flowBytes, $flowOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 VM flow PE machine: $flowOutput"
+            }
+            $manifest["obfh_vm_flow_$($s.id).exe"] = (Get-FileHash $flowOutput -Algorithm SHA256).Hash.ToLowerInvariant()
           }
           if ($manifest['obfh_even.exe'] -eq $manifest['obfh_odd.exe']) { throw 'Seed variants are identical' }
           if ($manifest['obfh_vm_even.exe'] -eq $manifest['obfh_vm_odd.exe']) { throw 'VM seed variants are identical' }
           if ($manifest['obfh_vm_branch_even.exe'] -eq $manifest['obfh_vm_branch_odd.exe']) { throw 'VM branch seed variants are identical' }
           if ($manifest['obfh_vm_program_even.exe'] -eq $manifest['obfh_vm_program_odd.exe']) { throw 'Encoded VM seed variants are identical' }
+          if ($manifest['obfh_vm_flow_even.exe'] -eq $manifest['obfh_vm_flow_odd.exe']) { throw 'VM flow seed variants are identical' }
           $manifest | ConvertTo-Json | Set-Content -Encoding utf8 build-arm64/manifest.json
       - uses: actions/upload-artifact@v4
         with:
@@ -290,7 +310,7 @@ jobs:
           $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
           if ($arch -ne 'Arm64' -or -not [Environment]::Is64BitProcess) { throw "Real ARM64 required: $arch" }
           $manifest = Get-Content bin/manifest.json -Raw | ConvertFrom-Json -AsHashtable
-          foreach ($name in @('obfh_even.exe','obfh_odd.exe','obfh_vm_even.exe','obfh_vm_odd.exe','obfh_vm_branch_even.exe','obfh_vm_branch_odd.exe','obfh_vm_program_even.exe','obfh_vm_program_odd.exe')) {
+          foreach ($name in @('obfh_even.exe','obfh_odd.exe','obfh_vm_even.exe','obfh_vm_odd.exe','obfh_vm_branch_even.exe','obfh_vm_branch_odd.exe','obfh_vm_program_even.exe','obfh_vm_program_odd.exe','obfh_vm_flow_even.exe','obfh_vm_flow_odd.exe')) {
             $path = (Resolve-Path (Join-Path bin $name)).Path
             [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
             $offset = [BitConverter]::ToInt32($bytes, 0x3c)

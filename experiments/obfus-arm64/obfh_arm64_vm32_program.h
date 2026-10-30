@@ -9,24 +9,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include "obfh_arm64_poc.h"
+#include "obfh_arm64_vm32_codec.h"
 
 #if defined(VM_AND) || defined(VM_OR) || defined(VM_XOR) || \
     defined(VM_NOT) || defined(VM_SHL) || defined(VM_SHR)
 #error "Cannot combine two VM_* implementations in one translation unit."
 #endif
 
-enum {
-    OBFH_VM32_LOAD_A = 1u,
-    OBFH_VM32_LOAD_B = 2u,
-    OBFH_VM32_AND = 3u,
-    OBFH_VM32_OR = 4u,
-    OBFH_VM32_XOR = 5u,
-    OBFH_VM32_NOT = 6u,
-    OBFH_VM32_SHL = 7u,
-    OBFH_VM32_SHR = 8u,
-    OBFH_VM32_RETURN = 9u
-};
 enum obfh_vm32_status {
     OBFH_VM32_OK = 0,
     OBFH_VM32_INVALID_ARGS = 1,
@@ -34,20 +23,6 @@ enum obfh_vm32_status {
     OBFH_VM32_WRONG_OPERATION = 3
 };
 #define OBFH_VM32_PROGRAM_WORDS 4u
-/* Layout: opcode[7:0], destination[9:8], source-A[11:10],
- * source-B[13:12]. The top 18 bits MUST be zero after decoding.
- * All operations below are 32-bit unsigned, with shifts masked mod 32.
- */
-#define OBFH_VM32_PACK(op,d,a,b) \
-    ((uint32_t)(op) | ((uint32_t)(d) << 8u) | \
-     ((uint32_t)(a) << 10u) | ((uint32_t)(b) << 12u))
-#define OBFH_VM32_KEY(site) \
-    ((uint32_t)OBFH_SEED ^ UINT32_C(0x7a335f19) ^ \
-     (((uint32_t)(site) + 1u) * UINT32_C(0x9e3779b9)))
-#define OBFH_VM32_MASK(key,pc) \
-    ((uint32_t)(key) ^ (((uint32_t)(pc) + 1u) * UINT32_C(0x85ebca6b)))
-#define OBFH_VM32_ENCODE(word,key,pc) \
-    ((uint32_t)(word) ^ OBFH_VM32_MASK((key),(pc)))
 
 /* Never trust decoded input. The immutable four-word shape and complete
  * register schedule are validated BEFORE any operation updates output.
