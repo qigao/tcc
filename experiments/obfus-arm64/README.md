@@ -8,7 +8,7 @@
 - The upstream `DosX-dev/obfus.h` header has 23 numbered sections and x86/x64-specific instruction strings (e.g. EAX/ESP, encoded `0xE8`/`0xE9` branches, stack proxy frames) and Windows x64 `.pdata` decoys. Replacing its architecture preprocessor branches is **not** enough.
 - Pinned TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893` includes `arm64-asm.c`, whose assembler supports GCC-style extended asm, `eor`, `add`, `sub`, `b`, conditional branches, `%w` registers and constraints. These are suitable seams for safe ARM64-specific lowering.
 
-This POC includes 32-bit modulo arithmetic, two seed-selected reversible instruction sequences, **A64-computed equality predicates**, and build-time encoded string bytes reconstructed into caller-owned memory. The next gate adds **64-bit borrowed object-pointer token encode/decode** (without ownership transfer or dereferencing an encoded token) and C-baseline differential tests covering switch, break/continue, multiple returns, side effects and wrapping unsigned values. Both seed variants must produce identical semantics while producing different binaries; a wrong seed/fixture pair must fail compilation. No compiler flags may select a silent no-op fallback.
+This POC includes 32-bit modulo arithmetic, two seed-selected reversible instruction sequences, **A64-computed equality predicates**, and build-time encoded string bytes reconstructed into caller-owned memory. The next gate adds **64-bit borrowed object-pointer token encode/decode** (without ownership transfer or dereferencing an encoded token) and C-baseline differential tests covering switch, break/continue, multiple returns, side effects and wrapping unsigned values. Both seed variants must produce identical semantics while producing different binaries; a wrong seed/fixture pair must fail compilation. No compiler flags may select a silent no-op fallback. Unknown upstream `OBFH_*` feature flags and legacy `NO_*`/`CFLOW_V2`/`VIRT` options now fail compilation rather than being silently ignored; the 32-bit seed range is also enforced.
 
 **Explicitly unsupported:** complete upstream `obfus.h` macros and automatic keyword rewriting; native x86 call/return/stack proxies; `HIDE_STRING(str)` source compatibility; VM dispatcher virtualization; anti-debugging, trap instructions, fake sections, Windows unwind metadata, CFG, BTI/PAC, signed binaries, and ARM32. The small test is **not** a measure of resistance to reverse engineering. Seed values are public layout selectors, not cryptographic keys. Never use this demo to protect real secrets.
 
@@ -33,6 +33,8 @@ A dedicated GitHub Actions workflow verifies native Linux ARM64 semantics with G
 
 - POC HEAD `196a9fc4ac9a7145c61c7b7931c3118f7369645f`: [CI #40999773996](https://github.com/qigao/tcc/actions/runs/40999773996) passed 5/5, including Linux native GCC, Clang and TinyCC plus genuine Windows ARM64 10x per seed. These proofs apply to that HEAD only; new pointer/branch changes require new exact-HEAD acceptance.
 - Setup action HEAD `29317e280bc398ef8b574d2017b4851bfdad3894`: [CI #40999679537](https://github.com/qigao/vcpkg-cache/actions/runs/40999679537) passed 7/7 for the candidate compiler installer; its Release claims remain explicitly denied.
+
+Detailed upstream source-region ownership and the split between portable semantics and ISA-specific rewrites are recorded in [UPSTREAM_PORTING_AUDIT.md](UPSTREAM_PORTING_AUDIT.md), based on the exact upstream Git blob SHA.
 
 ## Next architectural gates
 

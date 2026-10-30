@@ -77,6 +77,21 @@ jobs:
           fi
           grep -Fq 'Encoded fixture seed differs from target compiler seed' "$bad/compile.log"
           echo "ARM64_WRONG_SEED_REJECTED"
+          if ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DOBFH_SEED=0x12345678u -DOBFH_DISABLE_ANY_OBFUSCATION=1 -I"$bad" \
+            experiments/obfus-arm64/smoke.c -o "$bad/rejected" >"$bad/option.log" 2>&1; then
+            echo "::error::Unsupported obfus.h disable option was silently accepted"
+            exit 1
+          fi
+          grep -Fq 'Original obfus.h options are not implemented in the ARM64 POC.' "$bad/option.log"
+          if ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DOBFH_SEED=0x100000000ULL -I"$bad" \
+            experiments/obfus-arm64/smoke.c -o "$bad/rejected" >"$bad/range.log" 2>&1; then
+            echo "::error::Out-of-range 64-bit build seed was silently accepted"
+            exit 1
+          fi
+          grep -Fq 'OBFH_SEED must fit an unsigned 32-bit build constant.' "$bad/range.log"
+          echo "ARM64_UNSUPPORTED_OPTION_AND_SEED_RANGE_REJECTED"
           ccache -s
   linux-arm64-tinycc:
     runs-on: ubuntu-24.04-arm
@@ -121,6 +136,16 @@ jobs:
           grep -Fq 'Encoded fixture seed differs from target compiler seed' \
             build-obfus/tcc-wrong-seed/compile.log
           echo "TCC_WRONG_SEED_REJECTED"
+          if tools/tcc-installed/bin/tcc -DOBFH_SEED=0x12345678u \
+            -DOBFH_DISABLE_ANY_OBFUSCATION=1 -Ibuild-obfus/tcc-wrong-seed \
+            experiments/obfus-arm64/smoke.c -o build-obfus/tcc-wrong-seed/rejected \
+            >build-obfus/tcc-wrong-seed/option.log 2>&1; then
+            echo "::error::TinyCC silently accepted unsupported obfus.h option"
+            exit 1
+          fi
+          grep -Fq 'Original obfus.h options are not implemented in the ARM64 POC.' \
+            build-obfus/tcc-wrong-seed/option.log
+          echo "TCC_UNSUPPORTED_OPTION_REJECTED"
   windows-arm64-tcc-build:
     runs-on: windows-2022
     steps:

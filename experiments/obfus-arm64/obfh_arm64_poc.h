@@ -16,6 +16,19 @@
 #if defined(__TINYC__) && __TINYC__ < 928
 #error "TinyCC 0.9.28rc or newer is required for ARM64 extended inline asm."
 #endif
+#if (OBFH_SEED < 0) || (OBFH_SEED > 0xffffffffULL)
+#error "OBFH_SEED must fit an unsigned 32-bit build constant."
+#endif
+#if defined(OBFH_DISABLE_ANY_OBFUSCATION) || defined(OBFH_DISABLE_CONTROL_FLOW) || \
+    defined(OBFH_DISABLE_ANTIDEBUG) || defined(OBFH_DISABLE_PDATA_DECOYS) || \
+    defined(OBFH_BETTER_CONTROL_FLOW) || defined(OBFH_BETTER_ANTIDEBUG) || \
+    defined(OBFH_FAKE_SIGNATURES) || defined(OBFH_MEMORY_CLEANER) || \
+    defined(OBFH_PDATA_DECOY_COUNT) || defined(NO_OBF) || \
+    defined(NO_CFLOW) || defined(NO_ANTIDEBUG) || \
+    defined(NO_PDATA_DECOYS) || defined(CFLOW_V2) || \
+    defined(ANTIDEBUG_V2) || defined(FAKE_SIGNS) || defined(VIRT)
+#error "Original obfus.h options are not implemented in the ARM64 POC."
+#endif
 #if UINTPTR_MAX != UINT64_MAX
 #error "This experiment requires AArch64 with 64-bit uintptr_t."
 #endif
