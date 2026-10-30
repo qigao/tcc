@@ -23,6 +23,9 @@ GUARD_CF = 0x4000
 CF_INSTRUMENTED = 0x100
 CF_FUNCTION_TABLE_PRESENT = 0x400
 LOAD_CONFIG_DIRECTORY = 10
+EXCEPTION_DIRECTORY = 3
+ARM64_XDATA_HAS_HANDLER = 1 << 20
+ARM64_XDATA_SINGLE_EPILOG = 1 << 21
 LOAD_CONFIG_GUARD_OFFSET = 0x90
 
 
@@ -174,6 +177,127 @@ def audit_cfg_metadata(data: bytes, pe: dict, require_cfg: bool = False) -> dict
             "runtime_enforced": False}
 
 
+def audit_arm64_exception_metadata(data: bytes, pe: dict,
+                                   require_handler: bool = False) -> dict:
+    """Inspect actual ARM64 .pdata/.xdata, not source macros or exceptions.
+
+    The pinned TinyCC tccpe.c emits X=0 for its ARM64 unwind records.
+    This audit proves the *presence or absence* of handler-bearing xdata,
+    not Windows phase-one dispatch or __try/__finally cleanup. In particular,
+    X=1 + an RVA does not establish an authentic language scope table.
+    """
+    dirs = pe["directories"]
+    require(len(dirs) > EXCEPTION_DIRECTORY,
+            "ARM64 SEH metadata RED: missing exception directory entry")
+    rva, size = dirs[EXCEPTION_DIRECTORY]
+    require(rva and size and size % 8 == 0 and size <= 8 * 100000,
+            "ARM64 SEH metadata RED: empty/misaligned/oversized .pdata directory")
+    section = next((s for s in pe["sections"]
+                    if s["rva"] <= rva and
+                    rva + size <= s["rva"] + s["raw_size"]), None)
+    require(section is not None and
+            (section["flags"] & READ) and
+            not (section["flags"] & (WRITE | EXECUTE)),
+            "ARM64 SEH metadata RED: .pdata is not immutable mapped data")
+    at = raw_offset_for_rva(pe["sections"], rva, size)
+    count = size // 8
+    prev_begin = -1
+    xdata_records = 0
+    handler_records = 0
+    packed_records = 0
+    link_records = 0
+    header_versions = set()
+    handler_targets = []
+    for n in range(count):
+        begin_rva = u32(data, at + n * 8)
+        unwind_word = u32(data, at + n * 8 + 4)
+        flavor = unwind_word & 3
+        require(begin_rva > prev_begin and begin_rva % 4 == 0 and
+                begin_rva < pe["size_of_image"] and
+                any((sec["flags"] & EXECUTE) and
+                    not (sec["flags"] & WRITE) and
+                    sec["rva"] <= begin_rva <
+                    sec["rva"] + sec["virtual_size"]
+                    for sec in pe["sections"]),
+                "ARM64 SEH metadata RED: unsorted/non-executable .pdata start")
+        prev_begin = begin_rva
+        if flavor in (1, 2):
+            packed_records += 1
+            continue
+        if flavor == 3:
+            target = unwind_word & ~3
+            require(rva <= target and target < rva + size and
+                    (target - rva) % 8 == 0,
+                    "ARM64 SEH metadata RED: invalid .pdata link")
+            link_records += 1
+            continue
+        # flavor 0: the second DWORD is the 4-byte-aligned xdata RVA.
+        xdata_rva = unwind_word
+        xsec = next((sec for sec in pe["sections"]
+                     if sec["rva"] <= xdata_rva and
+                     xdata_rva + 4 <= sec["rva"] + sec["raw_size"]), None)
+        require(xdata_rva and xdata_rva % 4 == 0 and
+                xsec is not None and (xsec["flags"] & READ) and
+                not (xsec["flags"] & (WRITE | EXECUTE)),
+                "ARM64 SEH metadata RED: xdata outside immutable section")
+        xoff = raw_offset_for_rva(pe["sections"], xdata_rva, 4)
+        hdr = u32(data, xoff)
+        function_words = hdr & 0x3ffff
+        version = (hdr >> 18) & 3
+        has_handler = bool(hdr & ARM64_XDATA_HAS_HANDLER)
+        single_epilog = bool(hdr & ARM64_XDATA_SINGLE_EPILOG)
+        epilog_field = (hdr >> 22) & 31
+        code_words = (hdr >> 27) & 31
+        require(version == 0 and function_words > 0 and
+                begin_rva + 4 * function_words <= pe["size_of_image"],
+                "ARM64 SEH metadata RED: unsupported xdata version/length")
+        header_versions.add(version)
+        xdata_records += 1
+        # An extension word is present ONLY when both compact fields are 0.
+        ext = (epilog_field == 0 and code_words == 0)
+        header_words = 2 if ext else 1
+        if ext:
+            extension = u32(data, raw_offset_for_rva(
+                pe["sections"], xdata_rva + 4, 4))
+            epilog_field = extension & 0xffff
+            code_words = (extension >> 16) & 0xff
+            require((extension >> 24) == 0,
+                    "ARM64 SEH metadata RED: nonzero extended reserved bits")
+        require(code_words > 0 and code_words <= 255 and
+                (not single_epilog or epilog_field < 4 * code_words),
+                "ARM64 SEH metadata RED: bad unwind words/epilog index")
+        scope_words = 0 if single_epilog else epilog_field
+        record_bytes = (header_words + scope_words + code_words +
+                        int(has_handler)) * 4
+        require(record_bytes <= 1 << 20,
+                "ARM64 SEH metadata RED: excessive unwind record")
+        record_off = raw_offset_for_rva(pe["sections"], xdata_rva,
+                                        record_bytes)
+        # The unwind codes and the optional handler RVA must occupy actual
+        # file bytes; do not accept a flag set on a truncated section.
+        if has_handler:
+            handler_rva = u32(data, record_off + record_bytes - 4)
+            require(handler_rva % 4 == 0 and
+                    handler_rva < pe["size_of_image"] and
+                    any((sec["flags"] & EXECUTE) and
+                        not (sec["flags"] & WRITE) and
+                        sec["rva"] <= handler_rva <
+                        sec["rva"] + sec["virtual_size"]
+                        for sec in pe["sections"]),
+                    "ARM64 SEH metadata RED: invalid handler RVA/section")
+            handler_records += 1
+            handler_targets.append(f"0x{handler_rva:08x}")
+    require(not require_handler or handler_records > 0,
+            "ARM64 SEH metadata RED: no handler-bearing .xdata (X=1) records")
+    return {"pdata_entries": count, "xdata_records": xdata_records,
+            "packed_records": packed_records, "linked_records": link_records,
+            "xdata_versions": sorted(header_versions),
+            "handler_records": handler_records,
+            "handler_target_rvas": handler_targets[:16],
+            "scope_cleanup_verified": False,
+            "automatic_handler_dispatch_verified": False}
+
+
 def base_relocations(data: bytes, pe: dict) -> list[tuple[int, int]]:
     directories = pe["directories"]
     if len(directories) <= 5:
@@ -307,6 +431,8 @@ def main() -> None:
     parser.add_argument("--seed", required=True, type=lambda x: int(x, 0))
     parser.add_argument("--require-cfg", action="store_true",
                         help="fail closed unless actual PE CFG metadata is structurally valid")
+    parser.add_argument("--require-seh-metadata", action="store_true",
+                        help="require actual handler-bearing ARM64 .xdata (not a cleanup/dispatch proof)")
     args = parser.parse_args()
     require(0 <= args.seed <= MASK32, "seed outside uint32")
     data = args.binary.read_bytes()
@@ -320,6 +446,7 @@ def main() -> None:
     }, sort_keys=True), flush=True)
     relocations = base_relocations(data, pe)
     cfg = audit_cfg_metadata(data, pe, args.require_cfg)
+    seh = audit_arm64_exception_metadata(data, pe, args.require_seh_metadata)
     sites = {
         "site0": reference_site(args.seed, 0, 0, 0x10100),
         "site7": reference_site(args.seed, 7, 3, 0x808e0),
@@ -346,7 +473,8 @@ def main() -> None:
         "dynamic_base": bool(pe["dll_characteristics"] & 0x0040),
         "nx_compatible": bool(pe["dll_characteristics"] & 0x0100),
         "guard_cf_advertised": bool(pe["dll_characteristics"] & GUARD_CF),
-        "cfg_metadata": cfg
+        "cfg_metadata": cfg,
+        "seh_metadata": seh
     }
     print("ARM64_PE_VM_SECTIONS_PASS: " + json.dumps(report, sort_keys=True))
 
