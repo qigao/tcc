@@ -18,7 +18,7 @@ Initial toolchain: TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893
 | 08 (3046) | Junk primitives and scalar/string transport | Separate pure scalar identities from x86 asm; A64 branch and value transport must preserve flags and clobbers |
 | 09 (3218) | CRT cache and VM value transport | Preserve locking/initialization/ownership; audit compiler atomics, pointer-width transports and DLL lifetime |
 | 10 (3359) | CFLOW selectors / permutations / graphs | Preserve conditions and randomization semantics, implement new ARM64 branch patterns with explicit byte width/relocations |
-| 11 (4151) | VM register, flag, decode/execute kernel | Separate C VM semantics from ISA-specific transport; require arithmetic, overflow, boolean, float and failure differential tests |
+| 11 (4151) | VM register, flag, decode/execute kernel | New isolated four-word encoded A64 VM32 bitwise interpreter validates entire stream and executes real A64 ALU with bounded receipt; **upstream packed instruction schema, floating/long double, jumps and full VM remain open** |
 | 12 (4856) | Inline string/memory kernels | Preserve byte/UTF-8, buffer capacity, aliasing and return semantics; reject missing original macros instead of silent no-ops |
 | 13 (6872) | Automatic C keyword interception | **BLOCKED:** validate nested if/else, loops, switch, case, breaks and returns; do not equate an explicit branch helper to automatic interception |
 | 14 (7086) | Public VM interface / program templates | Six bitwise `VM_*` source signatures and three explicit `VM_IF/ELSE_IF/ELSE` macros have isolated direct-A64 value transports and semantic tests; upstream encoded VM dispatcher, automatic rewriting and remaining APIs remain **blocked** |
@@ -41,6 +41,8 @@ Initial toolchain: TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893
 - New opt-in `obfh_arm64_vm_bits.h` exposes `VM_AND/OR/XOR/NOT/SHL/SHR` using actual A64 ISA (not upstream VM virtualization). `vm_bits.c` validates return types, one-time argument evaluation, 32-bit shift masking, boundary values, 4,000 seeded value pairs and nested operations; native Linux/Windows CI required for the new exact HEAD.
 - Opt-in `obfh_arm64_vm_branches.h` exposes explicit `VM_IF`, `VM_ELSE_IF`, `VM_ELSE` preserving `!!` single-evaluation and closest-else binding; `vm_branches.c` differentially tests NaN, infinity, pointer/64-bit truth, recursion, goto, break/continue, short-circuit, and nested chains. No automatic keyword interception.
 - [Accepted 5/5 at POC HEAD `907a4a28`](https://github.com/qigao/tcc/actions/runs/41002282084). New tests require a new exact-HEAD run before updating evidence.
+
+- New opt-in `obfh_arm64_vm32_program.h` decodes and executes **four immutable encoded words** per source site with actual A64 instructions and strict program/operation validation. `vm_program.c` has successful-decode receipts, negative malformed bytecode and transactional error tests plus 49 boundary and 4,000 pseudo-random semantic inputs. This is a narrow VM with new encoding, **not** upstream's full instruction-program format.
 
 ## Admission after this POC
 
