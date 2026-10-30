@@ -34,10 +34,16 @@ _Static_assert(sizeof(OBFH_AC_PROGRAM(auto_add))==
                "Auto-site physical array length must match original template");
 _Static_assert(auto_add_length<=15u && auto_truth_length<=15u,
                "Source-selected VM site length must be bounded");
+/* File-scope typeof validates the typed CALL FUNCTION, not the lexical
+ * named-site macro, whose exact-size code object belongs to block scope.
+ * As upstream VM_* uses GNU statement expressions, the public macro itself
+ * is deliberately not legal in file-scope typeof. No fake extern pointer.
+ */
 typedef char obfh_auto_typecheck[
     __builtin_types_compatible_p(
-      __typeof__(OBFH_SC_CALL(auto_add,1,2,0u,3u,
-                  (long double*)0,(uint32_t*)0,(obfh_uprt_trace*)0)),
+      __typeof__(obfh_sc_call((const obfh_sc_descriptor*)0,
+                  1.0L,2.0L,0u,3u,(long double*)0,
+                  (uint32_t*)0,(obfh_uprt_trace*)0)),
       enum obfh_uprt_status) ? 1 : -1];
 
 /* All EIGHT original template types are compiled through the compact
