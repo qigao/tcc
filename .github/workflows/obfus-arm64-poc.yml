@@ -598,13 +598,24 @@ jobs:
                 if ($LASTEXITCODE -ne 0) {
                   throw "ARM64 native loader/ABI fail $name iteration $i exit $LASTEXITCODE"
                 }
-                $receipt = @($nativeOutput | Where-Object {
-                  $_ -match '^ARM64_NATIVE_LOADER_RELOC_PDATA_PASS: '
-                })
-                if ($receipt.Count -ne 1) {
-                  throw "No independent loader relocation and .pdata runtime receipt: $name run $i"
+                # One independent receipt per native OS subsystem.
+                # A .pdata lookup alone does not qualify stack walking,
+                # vectored delivery is not frame-based SEH, and a callback
+                # is not proof of GUARD_CF (currently not advertised).
+                foreach ($marker in @(
+                  'ARM64_NATIVE_LOADER_RELOC_PDATA_PASS: ',
+                  'ARM64_NATIVE_UNWIND_STACKWALK_PASS: ',
+                  'ARM64_NATIVE_VECTORED_EXCEPTION_DISPATCH_PASS: ',
+                  'ARM64_NATIVE_WINDOWS_CALLBACK_PASS: '
+                )) {
+                  $receipt = @($nativeOutput | Where-Object {
+                    $_.StartsWith($marker)
+                  })
+                  if ($receipt.Count -ne 1) {
+                    throw "Missing or duplicate native ABI receipt $marker for $name run $i"
+                  }
+                  Write-Host $receipt[0]
                 }
-                Write-Host $receipt[0]
               } else {
                 & $path
                 if ($LASTEXITCODE -ne 0) { throw "ARM64 native runtime fail $name iteration $i exit $LASTEXITCODE" }

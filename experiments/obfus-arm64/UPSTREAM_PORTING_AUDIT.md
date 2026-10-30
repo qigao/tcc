@@ -78,6 +78,8 @@ Initial toolchain: TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893
 
 - Live Windows ARM64 loader proof candidate: the existing `vm_upstream_static.c` opens its actual running PE to compare on-disk DIR64 relocation words with their relocated in-memory values under the real nonpreferred image base; `VirtualQuery` requires original packed VM bytecode pages to be `PAGE_READONLY`, and `RtlLookupFunctionEntry` must return a matching `.pdata` entry for a nonleaf VM test function. `windows-arm64-native` requires explicit success receipts **10 times per seed**. **Real exception propagation/unwinding and CFG are NOT implied** by these lower-level checks; keep Release blocked.
 
+- **Windows native OS stack-walk + vectored exception + callback ABI candidate**: the existing original VM executable uses `RtlCaptureStackBackTrace` inside three distinct nonleaf C frames and verifies their ordered observed PCs against loader-registered `.pdata` records; `RaiseException` triggers and retires a same-thread vectored exception handler; `EnumSystemLocalesEx` invokes a real TinyCC C callback with round-tripped `LPARAM`. The unchanged Windows native job requires distinct success receipts 10x per seed. **Vectored dispatch is not SEH frame cleanup, and GUARD_CF is still not present**. Full exception unwind/CFG/external ABI/Release remain gated.
+
 ## Admission after this POC
 
 1. **W1:** Define portable core vs ISA-specific lowers in a **separate experimental port**; binary-diff and regression test unchanged original x86/x64 headers before any upstream patch.

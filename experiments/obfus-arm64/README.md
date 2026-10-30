@@ -169,6 +169,18 @@ The unchanged `windows-arm64-native` job runs the existing static VM executable 
 
 **Release boundary:** loader relocation applied at nonpreferred base and successful `.pdata` lookup are distinct from **actual stack unwinding/SEH exception propagation** and CFG target enforcement. The current TinyCC PE did **not advertise `GUARD_CF`** in the earlier inspection; a successful function-table lookup cannot be misreported as CFG. External calling ABI and full protected original `HIDE_STRING`/CFLOW/stack proxies remain open.
 
+## Windows ARM64 OS stack-walk, vectored exception and native callback ABI (W3)
+
+`obfh_arm64_native_abi.h` integrates three **independent actual Windows ARM64 OS behaviors** into the same previously admitted `vm_upstream_static.c` native program, with **no new executable, workflow, VM or fallback**. The native CI now requires four explicit per-run receipts (prior loader DIR64/`.pdata` plus these three) for both seed binaries on each of ten executions. All existing Linux ARM64 GCC/Clang/TinyCC tests remain unchanged and build the same static source without Windows-only code.
+
+1. **Stack unwinding by the Windows OS**: `RtlCaptureStackBackTrace` captures the live stack inside three distinct nonleaf TinyCC functions with actual stack locals and observable post-call work. The fixture checks their ordered return PCs and compares the Windows loader's `RtlLookupFunctionEntry` records to the known function records; all three must lie inside the running image's `.pdata` and resolve to the same image base. A `.pdata` lookup without actually walking the call stack cannot pass this gate.
+
+2. **Native exception notification/continuation**: `AddVectoredExceptionHandler` installs a callable native ARM64 handler, `RaiseException` dispatches one continuable private code in the same thread, and the handler validates its exception pointers/code/thread before the OS resumes and the callback is unregistered. This validates **real vectored exception dispatch**, **not** frame-based `__try/__except` propagation, cleanup or stack unwinding as a consequence of an exception.
+
+3. **External Windows callback ABI**: `EnumSystemLocalesEx` invokes an AArch64 C function pointer with a UTF-16 locale name, DWORD flags and round-tripped `LPARAM` context pointer. The fixture verifies an actual nonzero callback count and same-thread data ownership. This exercises an actual Windows-to-TinyCC callback; it does **not** prove COM vtable, aggregate/long-double return or all Windows callback ABI signatures.
+
+The emitted PE still does not advertise `GUARD_CF`. **CFG target enforcement is a separate unqualified gate**; stack capture, OS callback and vectored exception evidence do not enable CFG. Full SEH frame unwinding, real cross-language exceptions/cleanup and BTI/PAC or protected product Release also remain unqualified.
+
 ## Native acceptance, not just cross-compile
 
 Run on **actual AArch64 hardware** with GCC, Clang, or pinned TinyCC:

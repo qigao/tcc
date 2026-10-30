@@ -336,11 +336,16 @@ cleanup:
                 status,actual,preferred,validated);
     return status;
 }
+/* Native stack walking, exception dispatch and Windows callback ABI are
+ * validated in this same fixture, never as a new consumer/runtime engine. */
+#include "obfh_arm64_native_abi.h"
 #endif
 
 int main(void) {
 #if defined(_WIN32)
     int rc=windows_loader_relocation_and_function_table();
+    if(rc) return rc;
+    rc=obfh_native_windows_abi_contract();
     if(rc) return rc;
 #else
     int rc;
