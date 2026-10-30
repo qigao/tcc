@@ -8,7 +8,7 @@
 - The upstream `DosX-dev/obfus.h` header has 23 numbered sections and x86/x64-specific instruction strings (e.g. EAX/ESP, encoded `0xE8`/`0xE9` branches, stack proxy frames) and Windows x64 `.pdata` decoys. Replacing its architecture preprocessor branches is **not** enough.
 - Pinned TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893` includes `arm64-asm.c`, whose assembler supports GCC-style extended asm, `eor`, `add`, `sub`, `b`, conditional branches, `%w` registers and constraints. These are suitable seams for safe ARM64-specific lowering.
 
-This POC includes 32-bit modulo arithmetic, two seed-selected reversible instruction sequences, equality predicates used in real C branch control, and build-time encoded string bytes reconstructed into caller-owned memory. Both seed variants must produce the same results without exposing the fixture's plaintext byte sequence. No compiler flags are allowed to select a silent no-op fallback.
+This POC includes 32-bit modulo arithmetic, two seed-selected reversible instruction sequences, **A64-computed equality predicates**, and build-time encoded string bytes reconstructed into caller-owned memory. The next gate adds **64-bit borrowed object-pointer token encode/decode** (without ownership transfer or dereferencing an encoded token) and C-baseline differential tests covering switch, break/continue, multiple returns, side effects and wrapping unsigned values. Both seed variants must produce identical semantics while producing different binaries; a wrong seed/fixture pair must fail compilation. No compiler flags may select a silent no-op fallback.
 
 **Explicitly unsupported:** complete upstream `obfus.h` macros and automatic keyword rewriting; native x86 call/return/stack proxies; `HIDE_STRING(str)` source compatibility; VM dispatcher virtualization; anti-debugging, trap instructions, fake sections, Windows unwind metadata, CFG, BTI/PAC, signed binaries, and ARM32. The small test is **not** a measure of resistance to reverse engineering. Seed values are public layout selectors, not cryptographic keys. Never use this demo to protect real secrets.
 
@@ -27,7 +27,12 @@ for seed in 0x12345678 0x12345679; do
 done
 ```
 
-A dedicated GitHub Actions workflow verifies native Linux ARM64 semantics with GCC/Clang/TinyCC and real Windows ARM64 native execution of TinyCC-generated PE images. Windows x64 cross-builds are **not** counted as native runtime. The Windows toolchain is downloaded from the pinned `TinyCC-builder` release `2026-10-22`, ZIP SHA-256 `19990b71f401068306ad699aa80af4afaf7f1a7a0110e791022b99da4cbd92e0`. Both ARM64 PE machine `0xAA64` and the exact artifact SHA-256 are checked before executing on Windows ARM64.
+A dedicated GitHub Actions workflow verifies native Linux ARM64 semantics with GCC/Clang/TinyCC and real Windows ARM64 native execution of TinyCC-generated PE images. Windows x64 cross-builds are **not** counted as native runtime. The Windows toolchain is installed via the immutable `qigao/vcpkg-cache/.github/actions/setup-tinycc-builder@29317e280bc398ef8b574d2017b4851bfdad3894` with `build-type: toolchain-only`, `target: arm64` and `verify-smoke: true`. That action verifies the `2026-10-29` compiler archive SHA-256 `d1b20a7a85f572201eb00f5e69361fd73f1bbb53ddfb89b49170f33ad2e778d7` and supplies `steps.tcc.outputs.cc`. A successful cross-compile smoke is **not** ARM64 native runtime or `obfus.h` ARM64 Release qualification. The product CI additionally verifies PE machine `0xAA64`, the exact artifact SHA-256 and native execution on actual Windows ARM64. The action's source PR #244 stays Draft.
+
+### Evidence ledger
+
+- POC HEAD `196a9fc4ac9a7145c61c7b7931c3118f7369645f`: [CI #40999773996](https://github.com/qigao/tcc/actions/runs/40999773996) passed 5/5, including Linux native GCC, Clang and TinyCC plus genuine Windows ARM64 10x per seed. These proofs apply to that HEAD only; new pointer/branch changes require new exact-HEAD acceptance.
+- Setup action HEAD `29317e280bc398ef8b574d2017b4851bfdad3894`: [CI #40999679537](https://github.com/qigao/vcpkg-cache/actions/runs/40999679537) passed 7/7 for the candidate compiler installer; its Release claims remain explicitly denied.
 
 ## Next architectural gates
 

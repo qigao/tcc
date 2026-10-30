@@ -59,6 +59,24 @@ jobs:
             for i in 1 2 3 4 5; do "$dir/smoke"; done
             echo "NATIVE_ARM64_${{ matrix.compiler }}_SEED_${seed}_PASS"
           done
+          # Both variants must differ on disk despite identical behavior.
+          even="build-obfus/${{ matrix.compiler }}-0x12345678/smoke"
+          odd="build-obfus/${{ matrix.compiler }}-0x12345679/smoke"
+          if cmp -s "$even" "$odd"; then
+            echo "::error::ARM64 seed variants unexpectedly produced identical binaries"
+            exit 1
+          fi
+          bad="build-obfus/${{ matrix.compiler }}-mismatched-seed"
+          mkdir -p "$bad"
+          python3 experiments/obfus-arm64/generate_fixture.py --seed 0x12345678 --output "$bad/obfh_arm64_fixture.h"
+          if ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DOBFH_SEED=0x12345679u -I"$bad" \
+            experiments/obfus-arm64/smoke.c -o "$bad/rejected" >"$bad/compile.log" 2>&1; then
+            echo "::error::Mismatched ARM64 seed compiled without a guard"
+            exit 1
+          fi
+          grep -Fq 'Encoded fixture seed differs from target compiler seed' "$bad/compile.log"
+          echo "ARM64_WRONG_SEED_REJECTED"
           ccache -s
   linux-arm64-tinycc:
     runs-on: ubuntu-24.04-arm
@@ -87,6 +105,22 @@ jobs:
             for i in 1 2 3 4 5; do "$dir/smoke"; done
             echo "NATIVE_TCC_ARM64_SEED_${seed}_PASS"
           done
+          if cmp -s build-obfus/tcc-0x12345678/smoke build-obfus/tcc-0x12345679/smoke; then
+            echo "::error::TinyCC AArch64 seed variants are identical"
+            exit 1
+          fi
+          mkdir -p build-obfus/tcc-wrong-seed
+          python3 experiments/obfus-arm64/generate_fixture.py --seed 0x12345678 \
+            --output build-obfus/tcc-wrong-seed/obfh_arm64_fixture.h
+          if tools/tcc-installed/bin/tcc -DOBFH_SEED=0x12345679u \
+            -Ibuild-obfus/tcc-wrong-seed experiments/obfus-arm64/smoke.c \
+            -o build-obfus/tcc-wrong-seed/rejected >build-obfus/tcc-wrong-seed/compile.log 2>&1; then
+            echo "::error::TinyCC accepted mismatched fixture and build seed"
+            exit 1
+          fi
+          grep -Fq 'Encoded fixture seed differs from target compiler seed' \
+            build-obfus/tcc-wrong-seed/compile.log
+          echo "TCC_WRONG_SEED_REJECTED"
   windows-arm64-tcc-build:
     runs-on: windows-2022
     steps:
