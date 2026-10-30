@@ -57,6 +57,10 @@
     OBFH_SC_ENCODE(NAME##_seed,NAME##_key,P, \
         OBFH_SC_ROR(OBFH_SC_PACK(NAME##_seed,NAME##_key,O,D,A,B,IMM),NAME##_key))
 
+/* The enum-held key may be interpreted as signed by TinyCC when bit31 is
+ * set. Upstream uses unsigned int for every right shift: cast before the
+ * shift, not only before downstream bitwise packing. Otherwise the vb_offset
+ * modulo-3 register permutation differs for high-bit keys. */
 /* Explicit declaration is necessary to guarantee static object storage.
  * All site fields are C compile-time integral constants. The key must
  * encode the requested original 0..7 variant in bits 24..26.
@@ -64,10 +68,10 @@
 #define OBFH_SC_META(NAME,SEED,KEY,OP,VARIANT,LENGTH) \
     enum { \
       NAME##_seed=(SEED), NAME##_key=(KEY), NAME##_operation=(OP), \
-      NAME##_variant=(NAME##_key>>24u)&7u, NAME##_length=(LENGTH), \
-      NAME##_va=NAME##_key&3u, \
-      NAME##_vb_offset=1u+((NAME##_key>>3u)%3u), \
-      NAME##_vc_pick=1u+((NAME##_key>>5u)&1u), \
+      NAME##_variant=((uint32_t)NAME##_key>>24u)&7u, NAME##_length=(LENGTH), \
+      NAME##_va=(uint32_t)NAME##_key&3u, \
+      NAME##_vb_offset=1u+(((uint32_t)NAME##_key>>3u)%3u), \
+      NAME##_vc_pick=1u+(((uint32_t)NAME##_key>>5u)&1u), \
       NAME##_vc_offset=NAME##_vc_pick+(NAME##_vc_pick>=NAME##_vb_offset), \
       NAME##_vb=(NAME##_va+NAME##_vb_offset)&3u, \
       NAME##_vc=(NAME##_va+NAME##_vc_offset)&3u, \

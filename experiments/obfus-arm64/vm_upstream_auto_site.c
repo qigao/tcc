@@ -16,6 +16,15 @@ OBFH_AS_DECLARE(auto_xor,UOP_BXOR);
 OBFH_AS_DECLARE(auto_cmp,UOP_EQ);
 OBFH_AS_DECLARE(auto_truth,UOP_TRUTH);
 enum { counter_after=__COUNTER__ };
+/* The first failing TinyCC seed produced exactly this high-bit key:
+ * the source VM owns uint32_t key; enum sign-extension before %3 must
+ * never alter the computed register permutation. */
+OBFH_SC_META(highbit_contract,OBFH_SEED,UINT32_C(0xe5dd3e4a),
+             UOP_ADD,5u,11u);
+_Static_assert(highbit_contract_va==2u &&
+               highbit_contract_vb_offset==2u &&
+               highbit_contract_vb==0u,
+               "High-bit VM key must use unsigned register permutation");
 _Static_assert(counter_after-counter_before==17u,
                "Unexpected source-site counter consumption");
 _Static_assert(auto_add_draw2==auto_add_site+3u,
