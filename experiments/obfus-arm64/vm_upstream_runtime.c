@@ -1,13 +1,14 @@
 /* SPDX-License-Identifier: MIT
  * Integrated original-format VM dispatcher differential:
- * upstream OBFH_V_PROGRAM_0..3 decoded into the SAME register/flag owner.
+ * upstream OBFH_V_PROGRAM_0..7 decoded into the SAME register/flag owner.
  * Exact source blob: DosX-dev/obfus.h 4c06fbc06f907afb3989e2851bed7583cfd0b6b0.
- * Only the four admitted program shapes are tested here. Not Release-ready.
+ * All eight source program shapes are tested here. Not Release-ready.
  */
 #include <stdint.h>
 #include <stddef.h>
 #include <limits.h>
 #include <string.h>
+#include <stdio.h>
 #include "obfh_arm64_upstream_runtime.h"
 
 enum {
@@ -49,7 +50,7 @@ static int emit(upstream_test_program *p, unsigned int pc,
     if(!emit(p,(pc),(op),(d),(a),(b),(imm))) return 0; \
 } while (0)
 
-/* Exact upstream field ownership and program 0/1/2/3 instruction shapes.
+/* Exact upstream field ownership and program 0..7 instruction shapes.
  * The original header generates immutable per-site code from constants.
  * This test builder generates equivalent words via the approved codec to
  * separate interpreter semantics from compile-time template emission.
@@ -58,7 +59,7 @@ static int build_program(upstream_test_program *p,uint32_t seed,
                          uint32_t key,unsigned int variant,unsigned int operation) {
     unsigned int va,vb,vc,vd,vb_offset,vc_pick,vc_offset;
     unsigned int op0,op1,im;
-    if (!p || variant>3u || operation>UOP_BSHR) return 0;
+    if (!p || variant>7u || operation>UOP_BSHR) return 0;
     memset(p,0,sizeof *p);
     p->seed=seed;p->key=key;p->variant=variant;p->operation=operation;
     va=key&3u;
@@ -99,7 +100,7 @@ static int build_program(upstream_test_program *p,uint32_t seed,
         PUT(8u,op1,vd,va,0u,im);
         PUT(9u,OBFH_UPRT_MOVE,vc,vd,0u,0u);
         PUT(10u,OBFH_UPRT_RETURN,0u,vc,0u,0u);
-    } else {
+    } else if (variant==3u) {
         p->length=10u;
         PUT(0u,OBFH_UPRT_LOAD_PAIR,va,vb,0u,0u);
         PUT(1u,OBFH_UPRT_TEST,0u,va,0u,0u);
@@ -111,6 +112,63 @@ static int build_program(upstream_test_program *p,uint32_t seed,
         PUT(7u,op0,vd,va,vb,0u);
         PUT(8u,op1,vd,va,0u,im);
         PUT(9u,OBFH_UPRT_RETURN,0u,vd,0u,0u);
+    } else if (variant==4u) {
+        /* JUMP-first predecessor graph with source-selected SWAP pair. */
+        p->length=12u;
+        PUT(0u,OBFH_UPRT_JUMP,0u,0u,0u,4u);
+        PUT(1u,op0,vc,va,vb,0u);
+        PUT(2u,op1,vc,va,0u,im);
+        PUT(3u,OBFH_UPRT_RETURN,0u,vc,0u,0u);
+        PUT(4u,OBFH_UPRT_LOAD_PAIR,va,vb,0u,0u);
+        PUT(5u,OBFH_UPRT_TEST,0u,va,0u,0u);
+        PUT(6u,OBFH_UPRT_JFLAG,0u,1u,0u,9u);
+        PUT(7u,OBFH_UPRT_MOVE,vd,va,0u,0u);
+        PUT(8u,OBFH_UPRT_JUMP,0u,0u,0u,1u);
+        PUT(9u,OBFH_UPRT_SWAP,0u,va,vb,0u);
+        PUT(10u,OBFH_UPRT_SWAP,0u,va,vb,0u);
+        PUT(11u,OBFH_UPRT_JUMP,0u,0u,0u,1u);
+    } else if (variant==5u) {
+        p->length=11u;
+        PUT(0u,OBFH_UPRT_LOAD_PAIR,va,vb,0u,0u);
+        PUT(1u,OBFH_UPRT_SWAP,0u,va,vb,0u);
+        PUT(2u,OBFH_UPRT_TEST,0u,vb,0u,0u);
+        PUT(3u,OBFH_UPRT_JFLAG,0u,1u,0u,7u);
+        PUT(4u,op0,vc,vb,va,0u);
+        PUT(5u,op1,vc,vb,0u,im);
+        PUT(6u,OBFH_UPRT_JUMP,0u,0u,0u,10u);
+        PUT(7u,op0,vd,vb,va,0u);
+        PUT(8u,op1,vd,vb,0u,im);
+        PUT(9u,OBFH_UPRT_MOVE,vc,vd,0u,0u);
+        PUT(10u,OBFH_UPRT_RETURN,0u,vc,0u,0u);
+    } else if (variant==6u) {
+        p->length=8u;
+        PUT(0u,OBFH_UPRT_LOAD_PAIR,va,vb,0u,0u);
+        PUT(1u,OBFH_UPRT_CADD,0u,0u,0u,2u);
+        PUT(2u,OBFH_UPRT_CADD,0u,0u,0u,262143u);
+        PUT(3u,OBFH_UPRT_JFLAG,1u,1u,0u,2u);
+        PUT(4u,OBFH_UPRT_MOVE,vd,va,0u,0u);
+        PUT(5u,op0,vc,vd,vb,0u);
+        PUT(6u,op1,vc,vd,0u,im);
+        PUT(7u,OBFH_UPRT_RETURN,0u,vc,0u,0u);
+    } else {
+        p->length=15u;
+        PUT(0u,OBFH_UPRT_LOAD_PAIR,va,vb,0u,0u);
+        PUT(1u,OBFH_UPRT_TEST,0u,va,0u,0u);
+        PUT(2u,OBFH_UPRT_JFLAG,0u,1u,0u,6u);
+        PUT(3u,(key&64u)?OBFH_UPRT_CROL:OBFH_UPRT_MOVE,
+            (key&64u)?1u:vd,(key&64u)?0u:va,0u,(key&64u)?7u:0u);
+        PUT(4u,(key&64u)?OBFH_UPRT_MOVE:OBFH_UPRT_CROL,
+            (key&64u)?vd:1u,(key&64u)?va:0u,0u,(key&64u)?0u:7u);
+        PUT(5u,OBFH_UPRT_JUMP,0u,0u,0u,8u);
+        PUT(6u,OBFH_UPRT_MOVE,vd,va,0u,0u);
+        PUT(7u,OBFH_UPRT_CXOR,1u,0u,0u,57u);
+        PUT(8u,op0,vc,vd,vb,0u);
+        PUT(9u,op1,vc,vd,0u,im);
+        PUT(10u,OBFH_UPRT_TEST,0u,vc,0u,0u);
+        PUT(11u,OBFH_UPRT_JFLAG,0u,1u,0u,14u);
+        PUT(12u,OBFH_UPRT_MOVE,va,vc,0u,0u);
+        PUT(13u,OBFH_UPRT_RETURN,0u,va,0u,0u);
+        PUT(14u,OBFH_UPRT_RETURN,0u,vc,0u,0u);
     }
     return 1;
 }
@@ -154,20 +212,63 @@ static int equal_number(long double x,long double y) {
     return x==y;
 }
 /* Validate the source program's control-flow PC trace, not just its answer. */
-static int expected_route(unsigned int v,long double a,
+static int expected_route(const upstream_test_program *program,
+                          long double a,long double result,
                           const obfh_uprt_trace *route) {
-    static const unsigned char paths[4][2][8] = {
-        {{0,1,2,3},{0,1,2,3}},
-        {{0,1,2,3,4,5},{0,1,2,3,4,5}},
-        {{0,1,2,3,4,5,10},{0,1,2,7,8,9,10}},
-        {{0,1,2,3,4,5},{0,1,2,7,8,9}}
-    };
-    static const unsigned char counts[4]={4,6,7,6};
-    const unsigned char *expected=paths[v][a!=0.0L];
-    unsigned int i;
-    if (route->count!=counts[v]) return 0;
-    for (i=0u;i<counts[v];++i)
-        if (route->pc[i]!=expected[i]) return 0;
+    unsigned char expected[15];
+    unsigned int used=0u,i;
+#define ADD_PC(pos) do { expected[used++]=(unsigned char)(pos); } while(0)
+    switch (program->variant) {
+    case 0u: ADD_PC(0);ADD_PC(1);ADD_PC(2);ADD_PC(3);break;
+    case 1u: ADD_PC(0);ADD_PC(1);ADD_PC(2);ADD_PC(3);
+             ADD_PC(4);ADD_PC(5);break;
+    case 2u:
+        ADD_PC(0);ADD_PC(1);ADD_PC(2);
+        if (a!=0.0L) { ADD_PC(7);ADD_PC(8);ADD_PC(9); }
+        else { ADD_PC(3);ADD_PC(4);ADD_PC(5); }
+        ADD_PC(10);
+        break;
+    case 3u:
+        ADD_PC(0);ADD_PC(1);ADD_PC(2);
+        if (a!=0.0L) { ADD_PC(7);ADD_PC(8);ADD_PC(9); }
+        else { ADD_PC(3);ADD_PC(4);ADD_PC(5); }
+        break;
+    case 4u:
+        ADD_PC(0);ADD_PC(4);ADD_PC(5);ADD_PC(6);
+        if (a!=0.0L) { ADD_PC(9);ADD_PC(10);ADD_PC(11); }
+        else { ADD_PC(7);ADD_PC(8); }
+        ADD_PC(1);ADD_PC(2);ADD_PC(3);
+        break;
+    case 5u:
+        ADD_PC(0);ADD_PC(1);ADD_PC(2);ADD_PC(3);
+        if (a!=0.0L) { ADD_PC(7);ADD_PC(8);ADD_PC(9); }
+        else { ADD_PC(4);ADD_PC(5);ADD_PC(6); }
+        ADD_PC(10);
+        break;
+    case 6u:
+        ADD_PC(0);ADD_PC(1);ADD_PC(2);ADD_PC(3);ADD_PC(2);
+        ADD_PC(3);ADD_PC(4);ADD_PC(5);ADD_PC(6);ADD_PC(7);
+        break;
+    case 7u:
+        ADD_PC(0);ADD_PC(1);ADD_PC(2);
+        if (a!=0.0L) { ADD_PC(6);ADD_PC(7); }
+        else { ADD_PC(3);ADD_PC(4);ADD_PC(5); }
+        ADD_PC(8);ADD_PC(9);ADD_PC(10);ADD_PC(11);
+        if (result!=0.0L) ADD_PC(14);
+        else { ADD_PC(12);ADD_PC(13); }
+        break;
+    default:return 0;
+    }
+#undef ADD_PC
+    if (route->count!=used) return 0;
+    for (i=0u;i<used;++i) {
+        obfh_upstream_fields actual;
+        if (route->pc[i]!=expected[i] ||
+            !obfh_upstream_decode(program->seed,program->key,
+                expected[i],program->words[expected[i]],&actual) ||
+            route->opcode[i]!=actual.opcode)
+            return 0;
+    }
     return 1;
 }
 
@@ -185,12 +286,23 @@ static int call_qualified(const upstream_test_program *p,
             p->seed,41,((nonce+7u)<<1u)|(floating&1u),&in_b)!=OBFH_UPVALUE_OK)
         return 20;
     memset(&route,0xa5,sizeof route);
-    if (obfh_arm64_upstream_execute(p->words,p->length,p->seed,p->key,
-            &in_a,17,&in_b,41,128u,&actual,&steps,&route)!=OBFH_UPRT_OK)
-        return 21;
+    {
+        enum obfh_uprt_status status=obfh_arm64_upstream_execute(
+            p->words,p->length,p->seed,p->key,
+            &in_a,17,&in_b,41,128u,&actual,&steps,&route);
+        if (status!=OBFH_UPRT_OK) {
+            fprintf(stderr,"UPRT_RUNTIME_FAIL variant=%u operation=%u sample=%u status=%u\n",
+                    p->variant,p->operation,sample_id,(unsigned int)status);
+            return 21;
+        }
+    }
     expected=reference(p->operation,a,b,floating);
-    if (!equal_number(actual,expected) || !expected_route(p->variant,a,&route) ||
-        steps!=route.count) return 22;
+    if (!equal_number(actual,expected) || !expected_route(p,a,expected,&route) ||
+        steps!=route.count) {
+        fprintf(stderr,"UPRT_RUNTIME_DIFFERENTIAL variant=%u operation=%u sample=%u steps=%u traced=%u\n",
+                p->variant,p->operation,sample_id,steps,route.count);
+        return 22;
+    }
     return 0;
 }
 
@@ -208,7 +320,7 @@ static int variant_matrix(void) {
     for (cfg=0u;cfg<8u;++cfg) {
         uint32_t seed=(uint32_t)OBFH_SEED ^ (cfg*UINT32_C(0x30455971));
         uint32_t key=(cfg<<29u)|((UINT32_C(0x5d721300)^seed)&UINT32_C(0x1fffffff));
-        for (v=0u;v<4u;++v)for (op=0u;op<=UOP_BSHR;++op) {
+        for (v=0u;v<8u;++v)for (op=0u;op<=UOP_BSHR;++op) {
             upstream_test_program program;
             if (!build_program(&program,seed,key+(v*UINT32_C(3266489917)),v,op))
                 return 30;
@@ -247,7 +359,7 @@ static int variant_matrix(void) {
             }
         }
     }
-    if (accepted<2500u) return 81;
+    if (accepted<5000u) return 81;
     return 0;
 }
 
@@ -266,11 +378,16 @@ static int rejection_matrix(void) {
            seed,41,5u,&in_b)!=OBFH_UPVALUE_OK) return 90;
     memset(&sentinel,0x5c,sizeof sentinel);
 #define BAD(prog,len,inA,saltA,inB,saltB,budget,expect) do { \
+    enum obfh_uprt_status observed; \
     out=-999.0L;steps=0xdecafbadu;trace=sentinel; \
-    if (obfh_arm64_upstream_execute((prog),(len),seed,key, \
-           (inA),(saltA),(inB),(saltB),(budget),&out,&steps,&trace)!=(expect) || \
-        out!=-999.0L || steps!=0xdecafbadu || \
-        memcmp(&trace,&sentinel,sizeof trace)!=0) return __LINE__; \
+    observed=obfh_arm64_upstream_execute((prog),(len),seed,key, \
+           (inA),(saltA),(inB),(saltB),(budget),&out,&steps,&trace); \
+    if (observed!=(expect) || out!=-999.0L || steps!=0xdecafbadu || \
+        memcmp(&trace,&sentinel,sizeof trace)!=0) { \
+        fprintf(stderr,"UPRT_REJECT_FAIL line=%d got=%u expected=%u steps=%u\n", \
+                __LINE__,(unsigned int)observed,(unsigned int)(expect),steps); \
+        return 89; \
+    } \
 } while(0)
     BAD(p.words,0u,&in_a,17,&in_b,41,128u,OBFH_UPRT_INVALID_ARGS);
     BAD(p.words,33u,&in_a,17,&in_b,41,128u,OBFH_UPRT_INVALID_ARGS);
@@ -315,6 +432,22 @@ static int rejection_matrix(void) {
     if (obfh_arm64_upvalue_encode((const unsigned char *)&a,sizeof a,
         seed,17,1u,&in_a)!=OBFH_UPVALUE_OK) return 107;
     BAD(p.words,p.length,&in_a,17,&in_b,41,128u,OBFH_UPRT_NUMERIC_RANGE);
+    a=5.0L;
+    if (obfh_arm64_upvalue_encode((const unsigned char *)&a,sizeof a,
+        seed,17,1u,&in_a)!=OBFH_UPVALUE_OK) return 108;
+    if (!build_program(&p,seed,key,6u,UOP_ADD)) return 109;
+    /* Original variant-6 CONTROL loop requires ten decoded steps. */
+    BAD(p.words,p.length,&in_a,17,&in_b,41,9u,OBFH_UPRT_BUDGET);
+    if (!build_program(&p,seed,key,7u,UOP_ADD)) return 110;
+    if (!obfh_upstream_decode(seed,key,11u,p.words[11],&word)) return 111;
+    word.d=3u;word.a=1u; /* selector 3 | (1 << 2) = 7, invalid */
+    if (!obfh_upstream_encode(seed,key,11u,&word,&p.words[11])) return 112;
+    BAD(p.words,p.length,&in_a,17,&in_b,41,128u,OBFH_UPRT_INVALID_PROGRAM);
+    if (!build_program(&p,seed,key,7u,UOP_ADD)) return 113;
+    if (!obfh_upstream_decode(seed,key,11u,p.words[11],&word)) return 114;
+    word.immediate=(uint32_t)p.length; /* invalid source jump */
+    if (!obfh_upstream_encode(seed,key,11u,&word,&p.words[11])) return 115;
+    BAD(p.words,p.length,&in_a,17,&in_b,41,128u,OBFH_UPRT_INVALID_PROGRAM);
 #undef BAD
     return 0;
 }
