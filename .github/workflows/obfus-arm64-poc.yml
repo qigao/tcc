@@ -628,17 +628,22 @@ jobs:
               # actually resumes a specified outer TinyCC frame, unlike
               # the per-run RtlVirtualUnwind copy-only admission above.
               # This is manual phase-two unwind, NOT __finally support.
-              $phase2Output = @(& $path '--phase2-unwind')
-              if ($LASTEXITCODE -ne 0) {
-                throw "ARM64 destructive unwind RED for $name (exit $LASTEXITCODE)"
+              for ($j = 0; $j -lt 10; ++$j) {
+                $phase2Output = @(& $path '--phase2-unwind')
+                if ($LASTEXITCODE -ne 0) {
+                  throw "ARM64 destructive unwind RED for $name iteration $j (exit $LASTEXITCODE)"
+                }
+                $receipt = @($phase2Output | Where-Object {
+                  $_.StartsWith('ARM64_NATIVE_DESTRUCTIVE_UNWIND_PASS: ')
+                })
+                if ($receipt.Count -ne 1) {
+                  throw "Missing or duplicate destructive-unwind receipt $name iteration $j"
+                }
+                if ($receipt[0] -notlike '*nonvolatile_restored=1') {
+                  throw "Live destructive unwind did not restore all nonvolatiles: $name run $j"
+                }
+                Write-Host $receipt[0]
               }
-              $receipt = @($phase2Output | Where-Object {
-                $_.StartsWith('ARM64_NATIVE_DESTRUCTIVE_UNWIND_PASS: ')
-              })
-              if ($receipt.Count -ne 1) {
-                throw "Missing or duplicate destructive-unwind native receipt for $name"
-              }
-              Write-Host $receipt[0]
             }
             Write-Host "ARM64_TCC_NATIVE_PASS: $name (10 runs)"
           }
