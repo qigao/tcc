@@ -12,7 +12,7 @@
 #include "obfh_arm64_upstream_vm_public.h"
 
 #define NONCE_SITE(NAME,OP) \
-    OBFH_AS_DECLARE(NAME,OP); \
+    OBFH_AC_DECLARE_STATIC(NAME,OP); \
     OBFH_AS_DECLARE_NONCES(NAME)
 /* Independent fixed golden constants from upstream's uint32 wrap + modulo.
  * The previous Windows TinyCC candidate wrongly retained a 64-bit product

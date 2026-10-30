@@ -57,7 +57,7 @@ enum {
  * file-scope typeof-compatible signature and remains available.
  */
 #define OBFH_ARM64_VM_EXEC(OP,LEFT,RIGHT,FLOATING) ({ \
-    OBFH_AS_DECLARE(__obfh_public_site,(OP)); \
+    OBFH_AC_DECLARE_EXPR(__obfh_public_site,(OP)); \
     OBFH_AS_DECLARE_NONCES(__obfh_public_site); \
     long double __obfh_public_result=0.0L; \
     uint32_t __obfh_public_steps=0u; \

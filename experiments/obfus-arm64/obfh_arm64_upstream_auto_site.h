@@ -96,152 +96,150 @@
                  ((NAME##_derivedkey>>24u)&7u), \
                  OBFH_AS_LENGTH((NAME##_derivedkey>>24u)&7u))
 
-/* The original variant's logical length is exact; this first automatic
- * candidate allocates 15 words (the maximum) to permit preprocessor
- * selection without runtime construction. Only [0,NAME_length) can run.
- * The unused tail is zero and is explicitly checked in native tests.
- * Exact physical array length is a separate optimization/compatibility gate.
+/* Exact original array lengths. As in upstream OBFH_V_PROGRAM, each
+ * compile-time choice has its OWN array type and precise element count.
+ * Named global sites use static-duration const compound literals; expression
+ * sites use const block-duration compound literals, precisely as the upstream
+ * GNU statement-expression implementation. There is no runtime encoder,
+ * no zero padded tail and no alternate executor.
  */
-#define OBFH_AS_SLOT_0(NAME) (\
-    NAME##_variant==0u ? (OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u)) : \
-    NAME##_variant==1u ? (OBFH_SC_WORD(NAME,0u,((NAME##_key&32u)?OBFH_UPRT_LOAD_A:OBFH_UPRT_LOAD_B),((NAME##_key&32u)?NAME##_va:NAME##_vb),0u,0u,0u)) : \
-    NAME##_variant==2u ? (OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u)) : \
-    NAME##_variant==3u ? (OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u)) : \
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,0u,OBFH_UPRT_JUMP,0u,0u,0u,4u)) : \
-    NAME##_variant==5u ? (OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u)) : \
-    NAME##_variant==6u ? (OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u)) : \
-    UINT32_C(0))
+#define OBFH_AC_VARIANT_0(NAME) ((const uint32_t[4u]) { \
+    OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u), \
+    OBFH_SC_WORD(NAME,1u,NAME##_op0,NAME##_vc,NAME##_va,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,2u,NAME##_op1,NAME##_vc,NAME##_va,0u,NAME##_imm), \
+    OBFH_SC_WORD(NAME,3u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u) \
+})
 
-#define OBFH_AS_SLOT_1(NAME) (\
-    NAME##_variant==0u ? (OBFH_SC_WORD(NAME,1u,NAME##_op0,NAME##_vc,NAME##_va,NAME##_vb,0u)) : \
-    NAME##_variant==1u ? (OBFH_SC_WORD(NAME,1u,((NAME##_key&32u)?OBFH_UPRT_LOAD_B:OBFH_UPRT_LOAD_A),((NAME##_key&32u)?NAME##_vb:NAME##_va),0u,0u,0u)) : \
-    NAME##_variant==2u ? (OBFH_SC_WORD(NAME,1u,OBFH_UPRT_TEST,0u,NAME##_va,0u,0u)) : \
-    NAME##_variant==3u ? (OBFH_SC_WORD(NAME,1u,OBFH_UPRT_TEST,0u,NAME##_va,0u,0u)) : \
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,1u,NAME##_op0,NAME##_vc,NAME##_va,NAME##_vb,0u)) : \
-    NAME##_variant==5u ? (OBFH_SC_WORD(NAME,1u,OBFH_UPRT_SWAP,0u,NAME##_va,NAME##_vb,0u)) : \
-    NAME##_variant==6u ? (OBFH_SC_WORD(NAME,1u,OBFH_UPRT_CADD,0u,0u,0u,2u)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,1u,OBFH_UPRT_TEST,0u,NAME##_va,0u,0u)) : \
-    UINT32_C(0))
+#define OBFH_AC_VARIANT_1(NAME) ((const uint32_t[6u]) { \
+    OBFH_SC_WORD(NAME,0u,((NAME##_key&32u)?OBFH_UPRT_LOAD_A:OBFH_UPRT_LOAD_B),((NAME##_key&32u)?NAME##_va:NAME##_vb),0u,0u,0u), \
+    OBFH_SC_WORD(NAME,1u,((NAME##_key&32u)?OBFH_UPRT_LOAD_B:OBFH_UPRT_LOAD_A),((NAME##_key&32u)?NAME##_vb:NAME##_va),0u,0u,0u), \
+    OBFH_SC_WORD(NAME,2u,OBFH_UPRT_MOVE,NAME##_vd,NAME##_va,0u,0u), \
+    OBFH_SC_WORD(NAME,3u,NAME##_op0,NAME##_vc,NAME##_vd,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,4u,NAME##_op1,NAME##_vc,NAME##_vd,0u,NAME##_imm), \
+    OBFH_SC_WORD(NAME,5u,OBFH_UPRT_COPY_RETURN,NAME##_va,NAME##_vc,0u,0u) \
+})
 
-#define OBFH_AS_SLOT_2(NAME) (\
-    NAME##_variant==0u ? (OBFH_SC_WORD(NAME,2u,NAME##_op1,NAME##_vc,NAME##_va,0u,NAME##_imm)) : \
-    NAME##_variant==1u ? (OBFH_SC_WORD(NAME,2u,OBFH_UPRT_MOVE,NAME##_vd,NAME##_va,0u,0u)) : \
-    NAME##_variant==2u ? (OBFH_SC_WORD(NAME,2u,OBFH_UPRT_JFLAG,0u,1u,0u,7u)) : \
-    NAME##_variant==3u ? (OBFH_SC_WORD(NAME,2u,OBFH_UPRT_JFLAG,0u,1u,0u,7u)) : \
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,2u,NAME##_op1,NAME##_vc,NAME##_va,0u,NAME##_imm)) : \
-    NAME##_variant==5u ? (OBFH_SC_WORD(NAME,2u,OBFH_UPRT_TEST,0u,NAME##_vb,0u,0u)) : \
-    NAME##_variant==6u ? (OBFH_SC_WORD(NAME,2u,OBFH_UPRT_CADD,0u,0u,0u,262143u)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,2u,OBFH_UPRT_JFLAG,0u,1u,0u,6u)) : \
-    UINT32_C(0))
+#define OBFH_AC_VARIANT_2(NAME) ((const uint32_t[11u]) { \
+    OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u), \
+    OBFH_SC_WORD(NAME,1u,OBFH_UPRT_TEST,0u,NAME##_va,0u,0u), \
+    OBFH_SC_WORD(NAME,2u,OBFH_UPRT_JFLAG,0u,1u,0u,7u), \
+    OBFH_SC_WORD(NAME,3u,NAME##_op0,NAME##_vc,NAME##_va,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,4u,NAME##_op1,NAME##_vc,NAME##_va,0u,NAME##_imm), \
+    OBFH_SC_WORD(NAME,5u,OBFH_UPRT_JUMP,0u,0u,0u,10u), \
+    OBFH_SC_WORD(NAME,6u,OBFH_UPRT_CROL,0u,0u,0u,3u), \
+    OBFH_SC_WORD(NAME,7u,NAME##_op0,NAME##_vd,NAME##_va,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,8u,NAME##_op1,NAME##_vd,NAME##_va,0u,NAME##_imm), \
+    OBFH_SC_WORD(NAME,9u,OBFH_UPRT_MOVE,NAME##_vc,NAME##_vd,0u,0u), \
+    OBFH_SC_WORD(NAME,10u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u) \
+})
 
-#define OBFH_AS_SLOT_3(NAME) (\
-    NAME##_variant==0u ? (OBFH_SC_WORD(NAME,3u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u)) : \
-    NAME##_variant==1u ? (OBFH_SC_WORD(NAME,3u,NAME##_op0,NAME##_vc,NAME##_vd,NAME##_vb,0u)) : \
-    NAME##_variant==2u ? (OBFH_SC_WORD(NAME,3u,NAME##_op0,NAME##_vc,NAME##_va,NAME##_vb,0u)) : \
-    NAME##_variant==3u ? (OBFH_SC_WORD(NAME,3u,NAME##_op0,NAME##_vc,NAME##_va,NAME##_vb,0u)) : \
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,3u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u)) : \
-    NAME##_variant==5u ? (OBFH_SC_WORD(NAME,3u,OBFH_UPRT_JFLAG,0u,1u,0u,7u)) : \
-    NAME##_variant==6u ? (OBFH_SC_WORD(NAME,3u,OBFH_UPRT_JFLAG,1u,1u,0u,2u)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,3u,((NAME##_key&64u)?OBFH_UPRT_CROL:OBFH_UPRT_MOVE),((NAME##_key&64u)?1u:NAME##_vd),((NAME##_key&64u)?0u:NAME##_va),0u,((NAME##_key&64u)?7u:0u))) : \
-    UINT32_C(0))
+#define OBFH_AC_VARIANT_3(NAME) ((const uint32_t[10u]) { \
+    OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u), \
+    OBFH_SC_WORD(NAME,1u,OBFH_UPRT_TEST,0u,NAME##_va,0u,0u), \
+    OBFH_SC_WORD(NAME,2u,OBFH_UPRT_JFLAG,0u,1u,0u,7u), \
+    OBFH_SC_WORD(NAME,3u,NAME##_op0,NAME##_vc,NAME##_va,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,4u,NAME##_op1,NAME##_vc,NAME##_va,0u,NAME##_imm), \
+    OBFH_SC_WORD(NAME,5u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u), \
+    OBFH_SC_WORD(NAME,6u,OBFH_UPRT_CXOR,0u,0u,0u,5u), \
+    OBFH_SC_WORD(NAME,7u,NAME##_op0,NAME##_vd,NAME##_va,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,8u,NAME##_op1,NAME##_vd,NAME##_va,0u,NAME##_imm), \
+    OBFH_SC_WORD(NAME,9u,OBFH_UPRT_RETURN,0u,NAME##_vd,0u,0u) \
+})
 
-#define OBFH_AS_SLOT_4(NAME) (\
-    NAME##_variant==1u ? (OBFH_SC_WORD(NAME,4u,NAME##_op1,NAME##_vc,NAME##_vd,0u,NAME##_imm)) : \
-    NAME##_variant==2u ? (OBFH_SC_WORD(NAME,4u,NAME##_op1,NAME##_vc,NAME##_va,0u,NAME##_imm)) : \
-    NAME##_variant==3u ? (OBFH_SC_WORD(NAME,4u,NAME##_op1,NAME##_vc,NAME##_va,0u,NAME##_imm)) : \
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,4u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u)) : \
-    NAME##_variant==5u ? (OBFH_SC_WORD(NAME,4u,NAME##_op0,NAME##_vc,NAME##_vb,NAME##_va,0u)) : \
-    NAME##_variant==6u ? (OBFH_SC_WORD(NAME,4u,OBFH_UPRT_MOVE,NAME##_vd,NAME##_va,0u,0u)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,4u,((NAME##_key&64u)?OBFH_UPRT_MOVE:OBFH_UPRT_CROL),((NAME##_key&64u)?NAME##_vd:1u),((NAME##_key&64u)?NAME##_va:0u),0u,((NAME##_key&64u)?0u:7u))) : \
-    UINT32_C(0))
+#define OBFH_AC_VARIANT_4(NAME) ((const uint32_t[12u]) { \
+    OBFH_SC_WORD(NAME,0u,OBFH_UPRT_JUMP,0u,0u,0u,4u), \
+    OBFH_SC_WORD(NAME,1u,NAME##_op0,NAME##_vc,NAME##_va,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,2u,NAME##_op1,NAME##_vc,NAME##_va,0u,NAME##_imm), \
+    OBFH_SC_WORD(NAME,3u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u), \
+    OBFH_SC_WORD(NAME,4u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u), \
+    OBFH_SC_WORD(NAME,5u,OBFH_UPRT_TEST,0u,NAME##_va,0u,0u), \
+    OBFH_SC_WORD(NAME,6u,OBFH_UPRT_JFLAG,0u,1u,0u,9u), \
+    OBFH_SC_WORD(NAME,7u,OBFH_UPRT_MOVE,NAME##_vd,NAME##_va,0u,0u), \
+    OBFH_SC_WORD(NAME,8u,OBFH_UPRT_JUMP,0u,0u,0u,1u), \
+    OBFH_SC_WORD(NAME,9u,OBFH_UPRT_SWAP,0u,NAME##_va,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,10u,OBFH_UPRT_SWAP,0u,NAME##_va,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,11u,OBFH_UPRT_JUMP,0u,0u,0u,1u) \
+})
 
-#define OBFH_AS_SLOT_5(NAME) (\
-    NAME##_variant==1u ? (OBFH_SC_WORD(NAME,5u,OBFH_UPRT_COPY_RETURN,NAME##_va,NAME##_vc,0u,0u)) : \
-    NAME##_variant==2u ? (OBFH_SC_WORD(NAME,5u,OBFH_UPRT_JUMP,0u,0u,0u,10u)) : \
-    NAME##_variant==3u ? (OBFH_SC_WORD(NAME,5u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u)) : \
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,5u,OBFH_UPRT_TEST,0u,NAME##_va,0u,0u)) : \
-    NAME##_variant==5u ? (OBFH_SC_WORD(NAME,5u,NAME##_op1,NAME##_vc,NAME##_vb,0u,NAME##_imm)) : \
-    NAME##_variant==6u ? (OBFH_SC_WORD(NAME,5u,NAME##_op0,NAME##_vc,NAME##_vd,NAME##_vb,0u)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,5u,OBFH_UPRT_JUMP,0u,0u,0u,8u)) : \
-    UINT32_C(0))
+#define OBFH_AC_VARIANT_5(NAME) ((const uint32_t[11u]) { \
+    OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u), \
+    OBFH_SC_WORD(NAME,1u,OBFH_UPRT_SWAP,0u,NAME##_va,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,2u,OBFH_UPRT_TEST,0u,NAME##_vb,0u,0u), \
+    OBFH_SC_WORD(NAME,3u,OBFH_UPRT_JFLAG,0u,1u,0u,7u), \
+    OBFH_SC_WORD(NAME,4u,NAME##_op0,NAME##_vc,NAME##_vb,NAME##_va,0u), \
+    OBFH_SC_WORD(NAME,5u,NAME##_op1,NAME##_vc,NAME##_vb,0u,NAME##_imm), \
+    OBFH_SC_WORD(NAME,6u,OBFH_UPRT_JUMP,0u,0u,0u,10u), \
+    OBFH_SC_WORD(NAME,7u,NAME##_op0,NAME##_vd,NAME##_vb,NAME##_va,0u), \
+    OBFH_SC_WORD(NAME,8u,NAME##_op1,NAME##_vd,NAME##_vb,0u,NAME##_imm), \
+    OBFH_SC_WORD(NAME,9u,OBFH_UPRT_MOVE,NAME##_vc,NAME##_vd,0u,0u), \
+    OBFH_SC_WORD(NAME,10u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u) \
+})
 
-#define OBFH_AS_SLOT_6(NAME) (\
-    NAME##_variant==2u ? (OBFH_SC_WORD(NAME,6u,OBFH_UPRT_CROL,0u,0u,0u,3u)) : \
-    NAME##_variant==3u ? (OBFH_SC_WORD(NAME,6u,OBFH_UPRT_CXOR,0u,0u,0u,5u)) : \
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,6u,OBFH_UPRT_JFLAG,0u,1u,0u,9u)) : \
-    NAME##_variant==5u ? (OBFH_SC_WORD(NAME,6u,OBFH_UPRT_JUMP,0u,0u,0u,10u)) : \
-    NAME##_variant==6u ? (OBFH_SC_WORD(NAME,6u,NAME##_op1,NAME##_vc,NAME##_vd,0u,NAME##_imm)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,6u,OBFH_UPRT_MOVE,NAME##_vd,NAME##_va,0u,0u)) : \
-    UINT32_C(0))
+#define OBFH_AC_VARIANT_6(NAME) ((const uint32_t[8u]) { \
+    OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u), \
+    OBFH_SC_WORD(NAME,1u,OBFH_UPRT_CADD,0u,0u,0u,2u), \
+    OBFH_SC_WORD(NAME,2u,OBFH_UPRT_CADD,0u,0u,0u,262143u), \
+    OBFH_SC_WORD(NAME,3u,OBFH_UPRT_JFLAG,1u,1u,0u,2u), \
+    OBFH_SC_WORD(NAME,4u,OBFH_UPRT_MOVE,NAME##_vd,NAME##_va,0u,0u), \
+    OBFH_SC_WORD(NAME,5u,NAME##_op0,NAME##_vc,NAME##_vd,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,6u,NAME##_op1,NAME##_vc,NAME##_vd,0u,NAME##_imm), \
+    OBFH_SC_WORD(NAME,7u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u) \
+})
 
-#define OBFH_AS_SLOT_7(NAME) (\
-    NAME##_variant==2u ? (OBFH_SC_WORD(NAME,7u,NAME##_op0,NAME##_vd,NAME##_va,NAME##_vb,0u)) : \
-    NAME##_variant==3u ? (OBFH_SC_WORD(NAME,7u,NAME##_op0,NAME##_vd,NAME##_va,NAME##_vb,0u)) : \
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,7u,OBFH_UPRT_MOVE,NAME##_vd,NAME##_va,0u,0u)) : \
-    NAME##_variant==5u ? (OBFH_SC_WORD(NAME,7u,NAME##_op0,NAME##_vd,NAME##_vb,NAME##_va,0u)) : \
-    NAME##_variant==6u ? (OBFH_SC_WORD(NAME,7u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,7u,OBFH_UPRT_CXOR,1u,0u,0u,57u)) : \
-    UINT32_C(0))
+#define OBFH_AC_VARIANT_7(NAME) ((const uint32_t[15u]) { \
+    OBFH_SC_WORD(NAME,0u,OBFH_UPRT_LOAD_PAIR,NAME##_va,NAME##_vb,0u,0u), \
+    OBFH_SC_WORD(NAME,1u,OBFH_UPRT_TEST,0u,NAME##_va,0u,0u), \
+    OBFH_SC_WORD(NAME,2u,OBFH_UPRT_JFLAG,0u,1u,0u,6u), \
+    OBFH_SC_WORD(NAME,3u,((NAME##_key&64u)?OBFH_UPRT_CROL:OBFH_UPRT_MOVE),((NAME##_key&64u)?1u:NAME##_vd),((NAME##_key&64u)?0u:NAME##_va),0u,((NAME##_key&64u)?7u:0u)), \
+    OBFH_SC_WORD(NAME,4u,((NAME##_key&64u)?OBFH_UPRT_MOVE:OBFH_UPRT_CROL),((NAME##_key&64u)?NAME##_vd:1u),((NAME##_key&64u)?NAME##_va:0u),0u,((NAME##_key&64u)?0u:7u)), \
+    OBFH_SC_WORD(NAME,5u,OBFH_UPRT_JUMP,0u,0u,0u,8u), \
+    OBFH_SC_WORD(NAME,6u,OBFH_UPRT_MOVE,NAME##_vd,NAME##_va,0u,0u), \
+    OBFH_SC_WORD(NAME,7u,OBFH_UPRT_CXOR,1u,0u,0u,57u), \
+    OBFH_SC_WORD(NAME,8u,NAME##_op0,NAME##_vc,NAME##_vd,NAME##_vb,0u), \
+    OBFH_SC_WORD(NAME,9u,NAME##_op1,NAME##_vc,NAME##_vd,0u,NAME##_imm), \
+    OBFH_SC_WORD(NAME,10u,OBFH_UPRT_TEST,0u,NAME##_vc,0u,0u), \
+    OBFH_SC_WORD(NAME,11u,OBFH_UPRT_JFLAG,0u,1u,0u,14u), \
+    OBFH_SC_WORD(NAME,12u,OBFH_UPRT_MOVE,NAME##_va,NAME##_vc,0u,0u), \
+    OBFH_SC_WORD(NAME,13u,OBFH_UPRT_RETURN,0u,NAME##_va,0u,0u), \
+    OBFH_SC_WORD(NAME,14u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u) \
+})
 
-#define OBFH_AS_SLOT_8(NAME) (\
-    NAME##_variant==2u ? (OBFH_SC_WORD(NAME,8u,NAME##_op1,NAME##_vd,NAME##_va,0u,NAME##_imm)) : \
-    NAME##_variant==3u ? (OBFH_SC_WORD(NAME,8u,NAME##_op1,NAME##_vd,NAME##_va,0u,NAME##_imm)) : \
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,8u,OBFH_UPRT_JUMP,0u,0u,0u,1u)) : \
-    NAME##_variant==5u ? (OBFH_SC_WORD(NAME,8u,NAME##_op1,NAME##_vd,NAME##_vb,0u,NAME##_imm)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,8u,NAME##_op0,NAME##_vc,NAME##_vd,NAME##_vb,0u)) : \
-    UINT32_C(0))
+#define OBFH_AC_PROGRAM(NAME) \
+    __builtin_choose_expr(NAME##_variant==0u, OBFH_AC_VARIANT_0(NAME), \
+        __builtin_choose_expr(NAME##_variant==1u, OBFH_AC_VARIANT_1(NAME), \
+        __builtin_choose_expr(NAME##_variant==2u, OBFH_AC_VARIANT_2(NAME), \
+        __builtin_choose_expr(NAME##_variant==3u, OBFH_AC_VARIANT_3(NAME), \
+        __builtin_choose_expr(NAME##_variant==4u, OBFH_AC_VARIANT_4(NAME), \
+        __builtin_choose_expr(NAME##_variant==5u, OBFH_AC_VARIANT_5(NAME), \
+        __builtin_choose_expr(NAME##_variant==6u, OBFH_AC_VARIANT_6(NAME), \
+        OBFH_AC_VARIANT_7(NAME))))))))
 
-#define OBFH_AS_SLOT_9(NAME) (\
-    NAME##_variant==2u ? (OBFH_SC_WORD(NAME,9u,OBFH_UPRT_MOVE,NAME##_vc,NAME##_vd,0u,0u)) : \
-    NAME##_variant==3u ? (OBFH_SC_WORD(NAME,9u,OBFH_UPRT_RETURN,0u,NAME##_vd,0u,0u)) : \
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,9u,OBFH_UPRT_SWAP,0u,NAME##_va,NAME##_vb,0u)) : \
-    NAME##_variant==5u ? (OBFH_SC_WORD(NAME,9u,OBFH_UPRT_MOVE,NAME##_vc,NAME##_vd,0u,0u)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,9u,NAME##_op1,NAME##_vc,NAME##_vd,0u,NAME##_imm)) : \
-    UINT32_C(0))
+/* sizeof examines the CHOSEN array type rather than a decayed pointer.
+ * The compile-time assertion prevents a variant/length mismatch even when
+ * the compiler optimizes away an unexecuted branch.
+ */
+#define OBFH_AC_ASSERT_LENGTH(NAME) \
+    _Static_assert(sizeof(OBFH_AC_PROGRAM(NAME)) == \
+                   (size_t)NAME##_length*sizeof(uint32_t), \
+                   "Original VM source site physical array size mismatch")
 
-#define OBFH_AS_SLOT_10(NAME) (\
-    NAME##_variant==2u ? (OBFH_SC_WORD(NAME,10u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u)) : \
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,10u,OBFH_UPRT_SWAP,0u,NAME##_va,NAME##_vb,0u)) : \
-    NAME##_variant==5u ? (OBFH_SC_WORD(NAME,10u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,10u,OBFH_UPRT_TEST,0u,NAME##_vc,0u,0u)) : \
-    UINT32_C(0))
-
-#define OBFH_AS_SLOT_11(NAME) (\
-    NAME##_variant==4u ? (OBFH_SC_WORD(NAME,11u,OBFH_UPRT_JUMP,0u,0u,0u,1u)) : \
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,11u,OBFH_UPRT_JFLAG,0u,1u,0u,14u)) : \
-    UINT32_C(0))
-
-#define OBFH_AS_SLOT_12(NAME) (\
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,12u,OBFH_UPRT_MOVE,NAME##_va,NAME##_vc,0u,0u)) : \
-    UINT32_C(0))
-
-#define OBFH_AS_SLOT_13(NAME) (\
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,13u,OBFH_UPRT_RETURN,0u,NAME##_va,0u,0u)) : \
-    UINT32_C(0))
-
-#define OBFH_AS_SLOT_14(NAME) (\
-    NAME##_variant==7u ? (OBFH_SC_WORD(NAME,14u,OBFH_UPRT_RETURN,0u,NAME##_vc,0u,0u)) : \
-    UINT32_C(0))
-
-#define OBFH_AS_DECLARE(NAME,OP) \
+/* A global named site has one static const pointer to an immutable compound
+ * array of exact length in static storage (which is not a 15-word pool).
+ */
+#define OBFH_AC_DECLARE_STATIC(NAME,OP) \
     OBFH_AS_META(NAME,OP); \
-    static const uint32_t NAME##_words[15u] = { \
-        OBFH_AS_SLOT_0(NAME), \
-        OBFH_AS_SLOT_1(NAME), \
-        OBFH_AS_SLOT_2(NAME), \
-        OBFH_AS_SLOT_3(NAME), \
-        OBFH_AS_SLOT_4(NAME), \
-        OBFH_AS_SLOT_5(NAME), \
-        OBFH_AS_SLOT_6(NAME), \
-        OBFH_AS_SLOT_7(NAME), \
-        OBFH_AS_SLOT_8(NAME), \
-        OBFH_AS_SLOT_9(NAME), \
-        OBFH_AS_SLOT_10(NAME), \
-        OBFH_AS_SLOT_11(NAME), \
-        OBFH_AS_SLOT_12(NAME), \
-        OBFH_AS_SLOT_13(NAME), \
-        OBFH_AS_SLOT_14(NAME) \
-    }
+    OBFH_AC_ASSERT_LENGTH(NAME); \
+    static const uint32_t *const NAME##_words = OBFH_AC_PROGRAM(NAME)
+
+/* Original VM_* statement expressions are inside functions. Compound literal
+ * arrays there have block storage duration, as in the upstream implementation;
+ * they are const and source words are fixed at compilation. A static pointer
+ * to a block-duration compound literal would be INVALID C, so do not pretend
+ * this is an object with static duration.
+ */
+#define OBFH_AC_DECLARE_EXPR(NAME,OP) \
+    OBFH_AS_META(NAME,OP); \
+    OBFH_AC_ASSERT_LENGTH(NAME); \
+    const uint32_t *const NAME##_words = OBFH_AC_PROGRAM(NAME)
 
 #endif
