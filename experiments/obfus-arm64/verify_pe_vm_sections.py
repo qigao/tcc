@@ -6,7 +6,8 @@ Compute two known source sites independently of the C macros, locate their
 COMPLETE encoded arrays in the actual PE sections, and reject writable or
 executable storage and relocation overlap.
 
-This does not certify ASLR, CFG, unwind/SEH or resistance to reversing.
+This certifies neither OS CFG enforcement nor SEH; structural CFG metadata
+checks remain separate from native indirect-call target admission.
 """
 import argparse
 import json
@@ -18,6 +19,12 @@ MASK32 = 0xffffffff
 READ = 0x40000000
 WRITE = 0x80000000
 EXECUTE = 0x20000000
+GUARD_CF = 0x4000
+CF_INSTRUMENTED = 0x100
+CF_FUNCTION_TABLE_PRESENT = 0x400
+LOAD_CONFIG_DIRECTORY = 10
+LOAD_CONFIG_GUARD_OFFSET = 0x90
+
 
 
 class AuditError(ValueError):
@@ -37,6 +44,11 @@ def u16(data: bytes, at: int) -> int:
 def u32(data: bytes, at: int) -> int:
     require(0 <= at <= len(data) - 4, "PE u32 out of file range")
     return struct.unpack_from("<I", data, at)[0]
+
+
+def u64(data: bytes, at: int) -> int:
+    require(0 <= at <= len(data) - 8, "PE u64 out of file range")
+    return struct.unpack_from("<Q", data, at)[0]
 
 
 def parse_pe(data: bytes) -> dict:
@@ -75,7 +87,8 @@ def parse_pe(data: bytes) -> dict:
                          "raw_size": raw_size, "raw_at": raw_at, "flags": flags})
     require(any(s["flags"] & EXECUTE for s in sections), "no executable code section")
     return {"sections": sections, "directories": directories,
-            "dll_characteristics": dll}
+            "dll_characteristics": dll, "image_base": u64(data, opt + 24),
+            "size_of_image": u32(data, opt + 56)}
 
 
 def raw_offset_for_rva(sections: list[dict], rva: int, size: int) -> int:
@@ -84,6 +97,81 @@ def raw_offset_for_rva(sections: list[dict], rva: int, size: int) -> int:
         if rel >= 0 and rel + size <= sec["raw_size"]:
             return sec["raw_at"] + rel
     raise AuditError(f"unmapped RVA range {rva:08x}+{size}")
+
+
+def audit_cfg_metadata(data: bytes, pe: dict, require_cfg: bool = False) -> dict:
+    """GuardCF *structure* only; never call this runtime CFG admission.
+
+    The linker must populate the PE64 load-config table and a sorted GFIDS
+    array of address-taken ARM64 functions. The bit in DllCharacteristics
+    alone is not sufficient. Even complete GFIDS do not prove the compiler
+    inserts checks before the indirect BLR or that the OS enforces them.
+    """
+    declared = bool(pe["dll_characteristics"] & GUARD_CF)
+    if not declared:
+        require(not require_cfg,
+                "CFG admission RED: GUARD_CF absent from actual TinyCC ARM64 PE")
+        return {"state": "not_advertised", "guard_cf": False,
+                "gfids_count": 0, "runtime_enforced": False}
+    require(len(pe["directories"]) > LOAD_CONFIG_DIRECTORY,
+            "CFG admission RED: GUARD_CF without Load Config directory")
+    rva, directory_size = pe["directories"][LOAD_CONFIG_DIRECTORY]
+    require(rva and directory_size >= LOAD_CONFIG_GUARD_OFFSET + 4,
+            "CFG admission RED: missing/truncated Load Config")
+    off = raw_offset_for_rva(pe["sections"], rva, LOAD_CONFIG_GUARD_OFFSET + 4)
+    require(u32(data, off) >= LOAD_CONFIG_GUARD_OFFSET + 4,
+            "CFG admission RED: Load Config declared size too small")
+    flags = u32(data, off + LOAD_CONFIG_GUARD_OFFSET)
+    require(flags & CF_INSTRUMENTED and flags & CF_FUNCTION_TABLE_PRESENT,
+            "CFG admission RED: missing instrumentation/GFIDS GuardFlags")
+    check_va = u64(data, off + 0x70)
+    table_va = u64(data, off + 0x80)
+    count = u64(data, off + 0x88)
+    image_base = pe["image_base"]
+    image_size = pe["size_of_image"]
+    stride_extra = (flags >> 28) & 0x0f
+    require(stride_extra <= 1,
+            "CFG admission RED: unsupported GFIDS extended entry stride")
+    require(0 < count <= 1000000 and image_size > 0,
+            "CFG admission RED: invalid/beyond-budget GFIDS count")
+    require(image_base <= check_va and image_base <= table_va,
+            "CFG admission RED: pointer/table below preferred image base")
+    check_rva = check_va - image_base
+    table_rva = table_va - image_base
+    entry_size = 4 + stride_extra
+    require(check_rva <= image_size - 8 and
+            count * entry_size <= image_size and
+            table_rva <= image_size - count * entry_size,
+            "CFG admission RED: Load Config address/count outside image")
+    raw_offset_for_rva(pe["sections"], check_rva, 8)
+    table_off = raw_offset_for_rva(pe["sections"], table_rva,
+                                   count * entry_size)
+    check_sections = [sec for sec in pe["sections"]
+                      if sec["rva"] <= check_rva and
+                      check_rva + 8 <= sec["rva"] + sec["raw_size"]]
+    require(len(check_sections) == 1 and
+            check_sections[0]["flags"] & READ and
+            not check_sections[0]["flags"] & (WRITE | EXECUTE),
+            "CFG admission RED: loader check pointer is not read-only data")
+    previous = -1
+    for i in range(count):
+        at = table_off + i * entry_size
+        target = u32(data, at)
+        require(target > previous and target % 4 == 0 and target < image_size,
+                "CFG admission RED: GFIDS unsorted/duplicate/misaligned RVA")
+        require(any(sec["flags"] & EXECUTE and
+                    not sec["flags"] & WRITE and
+                    sec["rva"] <= target < sec["rva"] + sec["virtual_size"]
+                    for sec in pe["sections"]),
+                "CFG admission RED: GFIDS target outside executable section")
+        if stride_extra:
+            require(data[at + 4] & ~3 == 0,
+                    "CFG admission RED: invalid GFIDS extra flags")
+        previous = target
+    return {"state": "structural_only", "guard_cf": True,
+            "guard_flags": f"{flags:08x}",
+            "gfids_count": count, "check_pointer_rva": f"{check_rva:08x}",
+            "runtime_enforced": False}
 
 
 def base_relocations(data: bytes, pe: dict) -> list[tuple[int, int]]:
@@ -217,6 +305,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", required=True, type=Path)
     parser.add_argument("--seed", required=True, type=lambda x: int(x, 0))
+    parser.add_argument("--require-cfg", action="store_true",
+                        help="fail closed unless actual PE CFG metadata is structurally valid")
     args = parser.parse_args()
     require(0 <= args.seed <= MASK32, "seed outside uint32")
     data = args.binary.read_bytes()
@@ -229,6 +319,7 @@ def main() -> None:
         "dll_characteristics": f"{pe['dll_characteristics']:04x}"
     }, sort_keys=True), flush=True)
     relocations = base_relocations(data, pe)
+    cfg = audit_cfg_metadata(data, pe, args.require_cfg)
     sites = {
         "site0": reference_site(args.seed, 0, 0, 0x10100),
         "site7": reference_site(args.seed, 7, 3, 0x808e0),
@@ -254,7 +345,8 @@ def main() -> None:
         "base_relocation_count": len(relocations),
         "dynamic_base": bool(pe["dll_characteristics"] & 0x0040),
         "nx_compatible": bool(pe["dll_characteristics"] & 0x0100),
-        "guard_cf_advertised": bool(pe["dll_characteristics"] & 0x4000)
+        "guard_cf_advertised": bool(pe["dll_characteristics"] & GUARD_CF),
+        "cfg_metadata": cfg
     }
     print("ARM64_PE_VM_SECTIONS_PASS: " + json.dumps(report, sort_keys=True))
 
