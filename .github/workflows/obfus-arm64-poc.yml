@@ -91,21 +91,36 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
-      - name: Download and verify pinned TinyCC-builder 0.9.28rc distribution
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $url = 'https://github.com/DosX-dev/TinyCC-builder/releases/download/2026-10-22/tinycc-windows-2026-10-22.zip'
-          Invoke-WebRequest -Uri $url -OutFile tinycc.zip
-          $digest = (Get-FileHash tinycc.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($digest -ne '19990b71f401068306ad699aa80af4afaf7f1a7a0110e791022b99da4cbd92e0') { throw 'TinyCC distribution digest mismatch' }
-          Expand-Archive tinycc.zip -DestinationPath tools/tinycc-windows
+      # Draft candidate. Pin a reviewed, immutable action commit; do not use master.
+      # This validates toolchain availability/PE identity, not obfus.h ARM64 Release.
+      - id: tcc
+        uses: qigao/vcpkg-cache/.github/actions/setup-tinycc-builder@29317e280bc398ef8b574d2017b4851bfdad3894
+        with:
+          version: "2026-10-29"
+          target: arm64
+          build-type: toolchain-only
+          verify-smoke: "true"
       - name: Compile protected ARM64 PE with TinyCC and record exact hashes
         shell: pwsh
+        env:
+          TCC_ARM64: ${{ steps.tcc.outputs.cc }}
+          TCC_SMOKE: ${{ steps.tcc.outputs.smoke }}
+          TCC_ROOT: ${{ steps.tcc.outputs.root }}
+          TCC_VERSION: ${{ steps.tcc.outputs.version }}
+          TCC_RELEASE_QUALIFIED: ${{ steps.tcc.outputs.release-qualified }}
+          TCC_ARCHIVE_SHA256: ${{ steps.tcc.outputs.archive-sha256 }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tcc = Get-ChildItem tools/tinycc-windows -Recurse -Filter arm64-win32-tcc.exe | Select-Object -First 1
-          if (-not $tcc) { throw 'ARM64 TinyCC compiler not present in pinned distribution' }
+          if (-not (Test-Path -LiteralPath $env:TCC_ARM64 -PathType Leaf)) {
+            throw 'Verified ARM64 TinyCC compiler output missing'
+          }
+          if ([IO.Path]::GetFileName($env:TCC_ARM64) -ne 'arm64-win32-tcc.exe' -or
+              $env:TCC_SMOKE -ne 'cross-compile-pe-machine' -or
+              $env:TCC_RELEASE_QUALIFIED -ne 'false' -or
+              $env:TCC_VERSION -ne '2026-10-29' -or
+              $env:TCC_ARCHIVE_SHA256 -ne 'd1b20a7a85f572201eb00f5e69361fd73f1bbb53ddfb89b49170f33ad2e778d7') {
+            throw 'TinyCC ARM64 source identity or cross-machine smoke contract mismatch'
+          }
           New-Item -ItemType Directory -Force build-arm64 | Out-Null
           $manifest = @{}
           foreach ($s in @(@{id='even';seed='0x12345678'}, @{id='odd';seed='0x12345679'})) {
@@ -114,7 +129,7 @@ jobs:
             python experiments/obfus-arm64/generate_fixture.py --seed $s.seed --output "$dir/obfh_arm64_fixture.h"
             if ($LASTEXITCODE -ne 0) { throw 'Fixture generation failed' }
             $output = "build-arm64/obfh_$($s.id).exe"
-            & $tcc.FullName "-DOBFH_SEED=$($s.seed)u" "-I$dir" 'experiments/obfus-arm64/smoke.c' '-o' $output
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" "-I$dir" 'experiments/obfus-arm64/smoke.c' '-o' $output
             if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 compilation failed: $($s.id)" }
             $bytes = [IO.File]::ReadAllBytes((Resolve-Path $output).Path)
             $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
