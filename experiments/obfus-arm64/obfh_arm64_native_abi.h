@@ -192,12 +192,16 @@ static BOOL CALLBACK obfh_native_locale_callback(LPWSTR name,DWORD flags,
     obfh_native_locale_param=(uintptr_t)cookie;
     obfh_native_locale_tid=GetCurrentThreadId();
     if(!ctx || ctx->cookie!=(uintptr_t)UINT32_C(0x31ac9471) ||
-       ctx->thread!=obfh_native_locale_tid || !name || !name[0]) {
+       ctx->thread!=obfh_native_locale_tid || !name) {
         ++obfh_native_locale_bad;
         return FALSE;
     }
     ++ctx->count;
-    ++ctx->saw_nonempty;
+    /* LOCALE_ALL may enumerate the invariant locale with an EMPTY locale
+     * name. Empty is legal; a null pointer or incorrect LPARAM/thread is
+     * not. Require at least one nonempty ordinary locale overall.
+     */
+    if(name[0]) ++ctx->saw_nonempty;
     return TRUE;
 }
 static int obfh_native_windows_callback_contract(void) {
@@ -220,13 +224,13 @@ static int obfh_native_windows_callback_contract(void) {
     SetLastError(0u);
     ok=enum_locales(obfh_native_locale_callback,0u,
                     (LPARAM)(uintptr_t)(void *)&ctx,(void *)0);
-    if(!ok || !ctx.count || ctx.count!=ctx.saw_nonempty ||
-       obfh_native_locale_bad || 
+    if(!ok || !ctx.count || !ctx.saw_nonempty ||
+       obfh_native_locale_bad ||
        obfh_native_locale_invocations!=ctx.count) {
-        fprintf(stderr,"ARM64_NATIVE_CALLBACK_RED: ok=%u count=%u "
+        fprintf(stderr,"ARM64_NATIVE_CALLBACK_RED: ok=%u count=%u nonempty=%u "
                 "seen=%u bad=%u param=%llx expected=%llx "
                 "tid=%lu expected_thread=%lu gle=%lu\n",
-                (unsigned int)ok,ctx.count,
+                (unsigned int)ok,ctx.count,ctx.saw_nonempty,
                 (unsigned int)obfh_native_locale_invocations,
                 (unsigned int)obfh_native_locale_bad,
                 (unsigned long long)obfh_native_locale_param,
