@@ -1,0 +1,154 @@
+name: ARM64 obfus.h instruction feasibility POC
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'experiments/obfus-arm64/**'
+      - '.github/workflows/obfus-arm64-poc.yml'
+permissions:
+  contents: read
+concurrency:
+  group: obfus-arm64-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux-arm64-native:
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native ARM64 seed and behavior qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          mkdir -p build-obfus
+          ccache --version
+          for seed in 0x12345678 0x12345679; do
+            dir="build-obfus/${{ matrix.compiler }}-$seed"
+            mkdir -p "$dir"
+            python3 experiments/obfus-arm64/generate_fixture.py --seed "$seed" --output "$dir/obfh_arm64_fixture.h"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" -I"$dir" \
+              experiments/obfus-arm64/smoke.c -o "$dir/smoke"
+            readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
+            python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
+            for i in 1 2 3 4 5; do "$dir/smoke"; done
+            echo "NATIVE_ARM64_${{ matrix.compiler }}_SEED_${seed}_PASS"
+          done
+          ccache -s
+  linux-arm64-tinycc:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned native TinyCC with ARM64 extended assembler
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          git clone https://github.com/TinyCC/tinycc.git tools/tinycc
+          git -C tools/tinycc checkout --detach e23dabed154a8495f3ac1ff3cc9d04fa1c207893
+          (cd tools/tinycc && ./configure --prefix="$GITHUB_WORKSPACE/tools/tcc-installed" && make -j2 && make install)
+      - name: True TinyCC ARM64 codegen and native runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          for seed in 0x12345678 0x12345679; do
+            dir="build-obfus/tcc-$seed"
+            mkdir -p "$dir"
+            python3 experiments/obfus-arm64/generate_fixture.py --seed "$seed" --output "$dir/obfh_arm64_fixture.h"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" -I"$dir" \
+              experiments/obfus-arm64/smoke.c -o "$dir/smoke"
+            readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
+            python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
+            for i in 1 2 3 4 5; do "$dir/smoke"; done
+            echo "NATIVE_TCC_ARM64_SEED_${seed}_PASS"
+          done
+  windows-arm64-tcc-build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify pinned TinyCC-builder 0.9.28rc distribution
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://github.com/DosX-dev/TinyCC-builder/releases/download/2026-10-22/tinycc-windows-2026-10-22.zip'
+          Invoke-WebRequest -Uri $url -OutFile tinycc.zip
+          $digest = (Get-FileHash tinycc.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne '19990b71f401068306ad699aa80af4afaf7f1a7a0110e791022b99da4cbd92e0') { throw 'TinyCC distribution digest mismatch' }
+          Expand-Archive tinycc.zip -DestinationPath tools/tinycc-windows
+      - name: Compile protected ARM64 PE with TinyCC and record exact hashes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tcc = Get-ChildItem tools/tinycc-windows -Recurse -Filter arm64-win32-tcc.exe | Select-Object -First 1
+          if (-not $tcc) { throw 'ARM64 TinyCC compiler not present in pinned distribution' }
+          New-Item -ItemType Directory -Force build-arm64 | Out-Null
+          $manifest = @{}
+          foreach ($s in @(@{id='even';seed='0x12345678'}, @{id='odd';seed='0x12345679'})) {
+            $dir = "build-arm64/$($s.id)"
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            python experiments/obfus-arm64/generate_fixture.py --seed $s.seed --output "$dir/obfh_arm64_fixture.h"
+            if ($LASTEXITCODE -ne 0) { throw 'Fixture generation failed' }
+            $output = "build-arm64/obfh_$($s.id).exe"
+            & $tcc.FullName "-DOBFH_SEED=$($s.seed)u" "-I$dir" 'experiments/obfus-arm64/smoke.c' '-o' $output
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 compilation failed: $($s.id)" }
+            $bytes = [IO.File]::ReadAllBytes((Resolve-Path $output).Path)
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+            if ($peOffset -lt 64 -or $peOffset + 6 -ge $bytes.Length -or
+                $bytes[$peOffset] -ne 0x50 -or $bytes[$peOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($bytes, $peOffset + 4) -ne 0xAA64) {
+              throw "Wrong PE machine: $output"
+            }
+            python experiments/obfus-arm64/verify_binary.py --binary $output --forbid arm64-hidden-poc
+            if ($LASTEXITCODE -ne 0) { throw "Plaintext detection failure: $output" }
+            $manifest["obfh_$($s.id).exe"] = (Get-FileHash $output -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          if ($manifest['obfh_even.exe'] -eq $manifest['obfh_odd.exe']) { throw 'Seed variants are identical' }
+          $manifest | ConvertTo-Json | Set-Content -Encoding utf8 build-arm64/manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm64-tcc-obfuscation-poc
+          path: build-arm64/obfh_*.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm64-tcc-obfuscation-provenance
+          path: build-arm64/manifest.json
+          if-no-files-found: error
+  windows-arm64-native:
+    runs-on: windows-11-vs2026-arm
+    needs: windows-arm64-tcc-build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: arm64-tcc-obfuscation-poc
+          path: bin
+      - uses: actions/download-artifact@v4
+        with:
+          name: arm64-tcc-obfuscation-provenance
+          path: bin
+      - name: Native ARM64 hardware, PE provenance and runtime 10x per seed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($arch -ne 'Arm64' -or -not [Environment]::Is64BitProcess) { throw "Real ARM64 required: $arch" }
+          $manifest = Get-Content bin/manifest.json -Raw | ConvertFrom-Json -AsHashtable
+          foreach ($name in @('obfh_even.exe','obfh_odd.exe')) {
+            $path = (Resolve-Path (Join-Path bin $name)).Path
+            [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
+            $offset = [BitConverter]::ToInt32($bytes, 0x3c)
+            if ($offset -lt 64 -or $offset + 6 -ge $bytes.Length -or
+                $bytes[$offset] -ne 0x50 -or $bytes[$offset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($bytes, $offset + 4) -ne 0xAA64) { throw "Wrong PE machine: $name" }
+            $digest = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($digest -ne $manifest[$name]) { throw "Artifact digest mismatch: $name" }
+            for ($i = 0; $i -lt 10; ++$i) {
+              & $path
+              if ($LASTEXITCODE -ne 0) { throw "ARM64 native runtime fail $name iteration $i exit $LASTEXITCODE" }
+            }
+            Write-Host "ARM64_TCC_NATIVE_PASS: $name (10 runs)"
+          }
