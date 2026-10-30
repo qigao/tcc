@@ -164,8 +164,15 @@ static int obfh_native_exception_dispatch_contract(void) {
      */
     RaiseException(OBFH_NATIVE_EXCEPTION_CODE,0u,0u,(const ULONG_PTR*)0);
     removed=RemoveVectoredExceptionHandler(token);
+    /* Windows adds its internal EXCEPTION_SOFTWARE_ORIGINATE (0x80)
+     * to a software-raised continuable exception. This is *not* the
+     * caller's EXCEPTION_NONCONTINUABLE bit. Accept no other flags.
+     * The strict 0x80-only allowance is based on actual native ARM64
+     * OS evidence, not a bypass of an unhandled exception.
+     */
     if(!removed || obfh_native_veh_seen!=1 ||
-       obfh_native_veh_flags!=0u ||
+       (obfh_native_veh_flags & ~UINT32_C(0x80))!=0u ||
+       (obfh_native_veh_flags & EXCEPTION_NONCONTINUABLE)!=0u ||
        obfh_native_veh_callback_thread!=obfh_native_veh_thread ||
        !obfh_native_veh_had_context) {
         fprintf(stderr,"ARM64_VEH_POST_RED: removed=%lu seen=%ld "
@@ -178,8 +185,10 @@ static int obfh_native_exception_dispatch_contract(void) {
                 (long)obfh_native_veh_had_context);
         return 87;
     }
-    puts("ARM64_NATIVE_VECTORED_EXCEPTION_DISPATCH_PASS: one continuable "
-         "same-thread exception, handler retired");
+    printf("ARM64_NATIVE_VECTORED_EXCEPTION_DISPATCH_PASS: "
+           "one continuable same-thread exception, handler retired, "
+           "os_software_origin_flags=%08lx\n",
+           (unsigned long)obfh_native_veh_flags);
     return 0;
 }
 typedef struct {
