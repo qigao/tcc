@@ -458,14 +458,14 @@ static int live_physical_owner_contract(void) {
         state.seed^=1u;
         memset(&untouched,0x5c,sizeof untouched);
         memcpy(&restored,&untouched,sizeof restored);
-        pc=UINT32_C(0xdecafbadu);status=UINT32_C(0xdecafbadu);
+        pc=UINT32_C(0xdecafbad);status=UINT32_C(0xdecafbad);
         memset(&readback,0x5c,sizeof readback);
         owner.cookie=0u;
         if (obfh_upcontext_live_load(&owner,&restored,&pc,&status,
                                      &readback) ||
             memcmp(&restored,&untouched,sizeof restored)!=0 ||
-            pc!=UINT32_C(0xdecafbadu) ||
-            status!=UINT32_C(0xdecafbadu))
+            pc!=UINT32_C(0xdecafbad) ||
+            status!=UINT32_C(0xdecafbad))
             return 108;
         for (k=0u;k<sizeof readback;++k)
             if (((unsigned char*)&readback)[k]!=0x5cu) return 109;
