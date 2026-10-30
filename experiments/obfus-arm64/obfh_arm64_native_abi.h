@@ -562,6 +562,11 @@ obfh_phase2_landing:
        frame[10]!=(DWORD)(0x73860000u+10u*23u) ||
        frame[36]!=(DWORD)(0x73860000u+36u*23u))
         return 105;
+    /* Validate the *live* Windows RtlUnwindEx target context, not only
+     * the earlier copy-only RtlVirtualUnwind context. Match all 10
+     * nonvolatile integer registers, FP, SP and V8..V15 low halves. */
+    if(obfh_native_check_restored_context(&after,&snapshot)!=0)
+        return 112;
     return 0;
 }
 static int obfh_native_phase2_unwind_contract(void) {
@@ -603,7 +608,8 @@ static int obfh_native_phase2_unwind_contract(void) {
         return 110;
     }
     printf("ARM64_NATIVE_DESTRUCTIVE_UNWIND_PASS: target_frame=1 "
-           "exception=1 resumed=1 inner_returns=0 outer_stack_preserved=1\n");
+           "exception=1 resumed=1 inner_returns=0 outer_stack_preserved=1 "
+           "nonvolatile_restored=1\n");
     return 0;
 }
 
