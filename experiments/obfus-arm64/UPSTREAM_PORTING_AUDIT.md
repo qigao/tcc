@@ -21,7 +21,7 @@ Initial toolchain: TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893
 | 11 (4151) | VM register, flag, decode/execute kernel | Separate C VM semantics from ISA-specific transport; require arithmetic, overflow, boolean, float and failure differential tests |
 | 12 (4856) | Inline string/memory kernels | Preserve byte/UTF-8, buffer capacity, aliasing and return semantics; reject missing original macros instead of silent no-ops |
 | 13 (6872) | Automatic C keyword interception | **BLOCKED:** validate nested if/else, loops, switch, case, breaks and returns; do not equate an explicit branch helper to automatic interception |
-| 14 (7086) | Public VM interface / program templates | Six bitwise `VM_*` source-signature operations are now an isolated **direct-A64 ISA adapter** with type/side-effect parity tests; original encoded VM dispatcher and remaining APIs are **still blocked** |
+| 14 (7086) | Public VM interface / program templates | Six bitwise `VM_*` source signatures and three explicit `VM_IF/ELSE_IF/ELSE` macros have isolated direct-A64 value transports and semantic tests; upstream encoded VM dispatcher, automatic rewriting and remaining APIs remain **blocked** |
 | 15 (7318) | Console/module bootstrap / PE exports | Reuse Windows API where available; prove Windows ARM64 loader/import table and pointer-width ABI |
 | 16 (7528) | Loader proxy | Preserve concurrent initialization, handle ownership, module unload and failure behavior |
 | 17 (7597) | Anti-debug probes | **BLOCKED:** x86 DR registers and `CONTEXT` fields are not ARM64; no dummy anti-debug markers or bypass |
@@ -39,6 +39,7 @@ Initial toolchain: TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893
 - 64-bit borrowed pointer encode/decode through integer tokens, including null/stack/static/array/heap; encoded token must never be dereferenced; no CRT ownership transfer.
 - Seed-dependent compiled fixture, no-demo-plaintext check, independent C control-flow differential and negative compilation for unsupported original `OBFH_*` toggles, mismatched/out-of-range seeds.
 - New opt-in `obfh_arm64_vm_bits.h` exposes `VM_AND/OR/XOR/NOT/SHL/SHR` using actual A64 ISA (not upstream VM virtualization). `vm_bits.c` validates return types, one-time argument evaluation, 32-bit shift masking, boundary values, 4,000 seeded value pairs and nested operations; native Linux/Windows CI required for the new exact HEAD.
+- Opt-in `obfh_arm64_vm_branches.h` exposes explicit `VM_IF`, `VM_ELSE_IF`, `VM_ELSE` preserving `!!` single-evaluation and closest-else binding; `vm_branches.c` differentially tests NaN, infinity, pointer/64-bit truth, recursion, goto, break/continue, short-circuit, and nested chains. No automatic keyword interception.
 - [Accepted 5/5 at POC HEAD `907a4a28`](https://github.com/qigao/tcc/actions/runs/41002282084). New tests require a new exact-HEAD run before updating evidence.
 
 ## Admission after this POC

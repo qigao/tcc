@@ -19,6 +19,11 @@ This POC includes 32-bit modulo arithmetic, two seed-selected reversible instruc
 This is **source-level/semantic parity only**. Upstream's `VM_*` macros route via an encoded VM instruction program, whereas this experimental implementation executes ISA operations directly. It must not be described as VM virtualization, full binary obfuscation parity, or a replacement for the original header. All other `VM_*` names, automatic keyword interception and full `HIDE_STRING(str)` remain unported and unexposed.
 
 `vm_bits.c` is a separate native executable that reproduces upstream [`tests/vm.c`](https://github.com/DosX-dev/obfus.h/blob/main/tests/vm.c)'s bitwise type, evaluation-count and shift semantics. It tests 49 boundary-value pairs, 4,000 deterministic pseudo-random pairs, nested calls and side effects. Linux native GCC/Clang/TinyCC and real Windows ARM64 compile and execute both seed variants; Windows checks `0xAA64` and exact SHA-256 before running.
+## Explicit `VM_IF` / `VM_ELSE_IF` / `VM_ELSE` source-signature slice
+
+`obfh_arm64_vm_branches.h` separately exports three original explicit branch macro signatures. Boolean normalization uses `!!(condition)` exactly once, followed by A64 equality/value transport. The `VM_ELSE` form deliberately remains `else if (true)` like the upstream region-14 contract so nested dangling-else behavior is not altered.
+
+`vm_branches.c` follows the logic of upstream [`tests/vm_branches.c`](https://github.com/DosX-dev/obfus.h/blob/main/tests/vm_branches.c): it checks short-circuit side effects, nested `if/else`, 64-bit integer and pointer truth, floating NaN/infinity/signed zero, `goto`, `break/continue`, 1,000 randomized branch chains and 32 recursive cases against unprotected C baselines. This is an **explicit macro** port, not automatic rewriting of C's `if` tokens or the original encoded VM program. The header may be opted into independently; it must never silently claim unsupported upstream features.
 ## Native acceptance, not just cross-compile
 
 Run on **actual AArch64 hardware** with GCC, Clang, or pinned TinyCC:

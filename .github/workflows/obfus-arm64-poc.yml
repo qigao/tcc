@@ -57,11 +57,15 @@ jobs:
             ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
               -D"OBFH_SEED=${seed}u" \
               experiments/obfus-arm64/vm_bits.c -o "$dir/vm_bits"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_branches.c -o "$dir/vm_branches"
             readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_bits" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_branches" | grep -q 'Machine:.*AArch64'
             python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
-            for i in 1 2 3 4 5; do "$dir/smoke"; "$dir/vm_bits"; done
-            echo "NATIVE_ARM64_${{ matrix.compiler }}_SEED_${seed}_VM_BITS_PASS"
+            for i in 1 2 3 4 5; do "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"; done
+            echo "NATIVE_ARM64_${{ matrix.compiler }}_SEED_${seed}_VM_BITS_BRANCHES_PASS"
           done
           # Both variants must differ on disk despite identical behavior.
           even="build-obfus/${{ matrix.compiler }}-0x12345678/smoke"
@@ -121,11 +125,14 @@ jobs:
               experiments/obfus-arm64/smoke.c -o "$dir/smoke"
             tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
               experiments/obfus-arm64/vm_bits.c -o "$dir/vm_bits"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_branches.c -o "$dir/vm_branches"
             readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_bits" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_branches" | grep -q 'Machine:.*AArch64'
             python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
-            for i in 1 2 3 4 5; do "$dir/smoke"; "$dir/vm_bits"; done
-            echo "NATIVE_TCC_ARM64_SEED_${seed}_VM_BITS_PASS"
+            for i in 1 2 3 4 5; do "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"; done
+            echo "NATIVE_TCC_ARM64_SEED_${seed}_VM_BITS_BRANCHES_PASS"
           done
           if cmp -s build-obfus/tcc-0x12345678/smoke build-obfus/tcc-0x12345679/smoke; then
             echo "::error::TinyCC AArch64 seed variants are identical"
@@ -219,9 +226,21 @@ jobs:
               throw "Wrong TinyCC ARM64 VM PE machine: $vmOutput"
             }
             $manifest["obfh_vm_$($s.id).exe"] = (Get-FileHash $vmOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            $branchOutput = "build-arm64/obfh_vm_branch_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_branches.c' '-o' $branchOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 VM branches compile failed: $($s.id)" }
+            [byte[]]$brBytes = [IO.File]::ReadAllBytes((Resolve-Path $branchOutput).Path)
+            $brOffset = [BitConverter]::ToInt32($brBytes, 0x3c)
+            if ($brOffset -lt 64 -or $brOffset + 6 -ge $brBytes.Length -or
+                $brBytes[$brOffset] -ne 0x50 -or $brBytes[$brOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($brBytes, $brOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 VM branch PE machine: $branchOutput"
+            }
+            $manifest["obfh_vm_branch_$($s.id).exe"] = (Get-FileHash $branchOutput -Algorithm SHA256).Hash.ToLowerInvariant()
           }
           if ($manifest['obfh_even.exe'] -eq $manifest['obfh_odd.exe']) { throw 'Seed variants are identical' }
           if ($manifest['obfh_vm_even.exe'] -eq $manifest['obfh_vm_odd.exe']) { throw 'VM seed variants are identical' }
+          if ($manifest['obfh_vm_branch_even.exe'] -eq $manifest['obfh_vm_branch_odd.exe']) { throw 'VM branch seed variants are identical' }
           $manifest | ConvertTo-Json | Set-Content -Encoding utf8 build-arm64/manifest.json
       - uses: actions/upload-artifact@v4
         with:
@@ -252,7 +271,7 @@ jobs:
           $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
           if ($arch -ne 'Arm64' -or -not [Environment]::Is64BitProcess) { throw "Real ARM64 required: $arch" }
           $manifest = Get-Content bin/manifest.json -Raw | ConvertFrom-Json -AsHashtable
-          foreach ($name in @('obfh_even.exe','obfh_odd.exe','obfh_vm_even.exe','obfh_vm_odd.exe')) {
+          foreach ($name in @('obfh_even.exe','obfh_odd.exe','obfh_vm_even.exe','obfh_vm_odd.exe','obfh_vm_branch_even.exe','obfh_vm_branch_odd.exe')) {
             $path = (Resolve-Path (Join-Path bin $name)).Path
             [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
             $offset = [BitConverter]::ToInt32($bytes, 0x3c)
