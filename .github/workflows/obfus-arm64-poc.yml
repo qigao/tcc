@@ -245,8 +245,16 @@ jobs:
             echo "::error::TinyCC accepted mismatched immutable obfus VM variant"
             exit 1
           fi
-          grep -Fq 'Static obfus.h VM variant disagrees with key' \
-            build-obfus/tcc-wrong-seed/static.log
+          # TinyCC may omit the GCC-style quoted assertion message.
+          # Accept ONLY a static-assertion diagnostic, never an arbitrary
+          # compilation failure; emit the original log if the exact text
+          # is unavailable to make the compiler-specific result auditable.
+          if ! grep -Fq 'Static obfus.h VM variant disagrees with key' \
+                build-obfus/tcc-wrong-seed/static.log; then
+            cat build-obfus/tcc-wrong-seed/static.log
+            grep -Eiq 'static.assert|assertion.failed' \
+              build-obfus/tcc-wrong-seed/static.log
+          fi
           echo "TCC_UPSTREAM_STATIC_VARIANT_MISMATCH_REJECTED"
   windows-arm64-tcc-build:
     runs-on: windows-2022
