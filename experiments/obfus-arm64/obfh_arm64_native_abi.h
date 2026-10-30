@@ -462,4 +462,149 @@ static int obfh_native_windows_abi_contract(void) {
     if(rc) return rc;
     return obfh_native_exception_dispatch_contract();
 }
+
+/* Separate Windows ARM64 phase-two experiment.
+ *
+ * Unlike the earlier RtlVirtualUnwind copy check, RtlUnwindEx actually
+ * transfers control from a live TinyCC nonleaf stack to the target frame.
+ * A dedicated continuable RaiseException supplies the EXCEPTION_RECORD.
+ * This manual unwind is NOT generated __try/__except/__finally scope cleanup.
+ * Only the explicit opt-in --phase2-unwind mode executes this path.
+ */
+#define OBFH_NATIVE_PHASE2_EXCEPTION_CODE ((DWORD)0xe04f4249u)
+typedef VOID (WINAPI *obfh_native_unwind_ex_t)(
+        PVOID,PVOID,PEXCEPTION_RECORD,PVOID,PCONTEXT,PVOID);
+static obfh_native_unwind_ex_t obfh_native_unwind_ex;
+static void *obfh_phase2_target_frame;
+static void *obfh_phase2_target_pc;
+static EXCEPTION_RECORD obfh_phase2_exception_record;
+static volatile LONG obfh_phase2_exception_seen;
+static volatile LONG obfh_phase2_leaf_returned;
+static volatile LONG obfh_phase2_middle_returned;
+static volatile LONG obfh_phase2_outer_returned;
+static volatile LONG obfh_phase2_resumed;
+static volatile LONG obfh_phase2_error;
+static unsigned long long obfh_phase2_target_sp;
+static PVOID obfh_phase2_handler_token;
+
+static LONG CALLBACK obfh_native_phase2_vectored_handler(
+        struct _EXCEPTION_POINTERS *info) {
+    if(!info || !info->ExceptionRecord ||
+       info->ExceptionRecord->ExceptionCode!=OBFH_NATIVE_PHASE2_EXCEPTION_CODE)
+        return EXCEPTION_CONTINUE_SEARCH;
+    if(!info->ContextRecord ||
+       (info->ExceptionRecord->ExceptionFlags & EXCEPTION_NONCONTINUABLE))
+        return EXCEPTION_CONTINUE_SEARCH;
+    obfh_phase2_exception_record=*info->ExceptionRecord;
+    ++obfh_phase2_exception_seen;
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+static __attribute__((noinline)) void obfh_native_phase2_leaf(void) {
+    volatile DWORD frame[37];
+    CONTEXT context;
+    unsigned int i;
+    for(i=0u;i<37u;++i) frame[i]=0x51740000u+i*37u;
+    RaiseException(OBFH_NATIVE_PHASE2_EXCEPTION_CODE,0u,0u,
+                   (const ULONG_PTR*)0);
+    if(obfh_phase2_exception_seen!=1 ||
+       !obfh_phase2_target_frame || !obfh_phase2_target_pc) {
+        obfh_phase2_error=1;
+        return;
+    }
+    obfh_native_capture_context(&context);
+    /* Real phase-two OS unwinder; should NEVER return to this frame. */
+    obfh_native_unwind_ex(obfh_phase2_target_frame,obfh_phase2_target_pc,
+                          &obfh_phase2_exception_record,(void *)0,
+                          &context,(void *)0);
+    obfh_phase2_leaf_returned=1;
+    obfh_native_stack_sink^=frame[8];
+}
+static __attribute__((noinline)) void obfh_native_phase2_middle(void) {
+    volatile DWORD frame[43];
+    unsigned int i;
+    for(i=0u;i<43u;++i) frame[i]=0x62750000u+i*19u;
+    obfh_native_phase2_leaf();
+    obfh_phase2_middle_returned=1;
+    obfh_native_stack_sink^=frame[9];
+}
+static __attribute__((noinline)) int obfh_native_phase2_outer(void) {
+    volatile DWORD frame[47];
+    CONTEXT snapshot,unwind_context,after;
+    unsigned long long base=0u,establisher=0u;
+    void *handler_data=(void *)0;
+    void *entry;
+    unsigned int i;
+    for(i=0u;i<47u;++i) frame[i]=0x73860000u+i*23u;
+    obfh_phase2_target_pc=&&obfh_phase2_landing;
+    obfh_native_capture_context(&snapshot);
+    obfh_phase2_target_sp=(unsigned long long)snapshot.Sp;
+    unwind_context=snapshot;
+    entry=obfh_native_exception_lookup((unsigned long long)snapshot.Pc,
+                                        &base,(void *)0);
+    if(!entry || !base || !obfh_phase2_target_pc) return 101;
+    obfh_native_virtual_unwind(0u,base,(unsigned long long)snapshot.Pc,entry,
+                &unwind_context,&handler_data,&establisher,(void *)0);
+    if(!establisher || (unsigned long long)unwind_context.Sp<=snapshot.Sp)
+        return 102;
+    obfh_phase2_target_frame=(void *)(uintptr_t)establisher;
+    obfh_native_phase2_middle();
+    obfh_phase2_outer_returned=1;
+    return 103; /* Ordinary nested returns MUST be skipped. */
+
+obfh_phase2_landing:
+    obfh_native_capture_context(&after);
+    ++obfh_phase2_resumed;
+    if(obfh_phase2_exception_seen!=1 || obfh_phase2_error ||
+       obfh_phase2_leaf_returned || obfh_phase2_middle_returned ||
+       obfh_phase2_outer_returned) return 104;
+    if((unsigned long long)after.Sp!=obfh_phase2_target_sp ||
+       (unsigned long long)after.Sp==0u ||
+       frame[10]!=(DWORD)(0x73860000u+10u*23u) ||
+       frame[36]!=(DWORD)(0x73860000u+36u*23u))
+        return 105;
+    return 0;
+}
+static int obfh_native_phase2_unwind_contract(void) {
+    HMODULE ntdll=GetModuleHandleA("ntdll.dll");
+    HMODULE kernel=GetModuleHandleA("kernel32.dll");
+    int rc;
+    if(!ntdll || !kernel) return 106;
+    obfh_native_exception_lookup=(obfh_native_lookup_t)(void *)
+            GetProcAddress(kernel,"RtlLookupFunctionEntry");
+    obfh_native_virtual_unwind=(obfh_native_virtual_unwind_t)(void *)
+            GetProcAddress(ntdll,"RtlVirtualUnwind");
+    obfh_native_capture_context=(obfh_native_capture_context_t)(void *)
+            GetProcAddress(ntdll,"RtlCaptureContext");
+    obfh_native_unwind_ex=(obfh_native_unwind_ex_t)(void *)
+            GetProcAddress(ntdll,"RtlUnwindEx");
+    if(!obfh_native_exception_lookup || !obfh_native_virtual_unwind ||
+       !obfh_native_capture_context || !obfh_native_unwind_ex) return 107;
+    obfh_phase2_exception_seen=0;
+    obfh_phase2_leaf_returned=0;
+    obfh_phase2_middle_returned=0;
+    obfh_phase2_outer_returned=0;
+    obfh_phase2_resumed=0;
+    obfh_phase2_error=0;
+    obfh_phase2_handler_token=AddVectoredExceptionHandler(
+                              1u,obfh_native_phase2_vectored_handler);
+    if(!obfh_phase2_handler_token) return 108;
+    rc=obfh_native_phase2_outer();
+    if(!RemoveVectoredExceptionHandler(obfh_phase2_handler_token)) return 109;
+    if(rc || obfh_phase2_resumed!=1 || obfh_phase2_exception_seen!=1 ||
+       obfh_phase2_error || obfh_phase2_leaf_returned ||
+       obfh_phase2_middle_returned || obfh_phase2_outer_returned) {
+        fprintf(stderr,"ARM64_NATIVE_DESTRUCTIVE_UNWIND_RED: rc=%d resumed=%ld "
+                "seen=%ld leaf=%ld middle=%ld outer=%ld err=%ld\n",
+                rc,(long)obfh_phase2_resumed,(long)obfh_phase2_exception_seen,
+                (long)obfh_phase2_leaf_returned,
+                (long)obfh_phase2_middle_returned,
+                (long)obfh_phase2_outer_returned,
+                (long)obfh_phase2_error);
+        return 110;
+    }
+    printf("ARM64_NATIVE_DESTRUCTIVE_UNWIND_PASS: target_frame=1 "
+           "exception=1 resumed=1 inner_returns=0 outer_stack_preserved=1\n");
+    return 0;
+}
+
 #endif
