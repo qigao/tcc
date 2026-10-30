@@ -93,6 +93,9 @@ jobs:
             ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
               -D"OBFH_SEED=${seed}u" \
               experiments/obfus-arm64/vm_upstream_public.c -o "$dir/vm_upstream_public"
+            ccache ${{ matrix.compiler }} -std=gnu11 -O2 -Wall -Wextra -Werror \
+              -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_nonce.c -o "$dir/vm_upstream_nonce"
             readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_bits" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_branches" | grep -q 'Machine:.*AArch64'
@@ -107,6 +110,7 @@ jobs:
             readelf -h "$dir/vm_upstream_context" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_auto_site" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_public" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_nonce" | grep -q 'Machine:.*AArch64'
             python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
             for i in 1 2 3 4 5; do
               "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"
@@ -115,8 +119,9 @@ jobs:
               "$dir/vm_upstream_registers"; "$dir/vm_upstream_runtime"
               "$dir/vm_upstream_static"; "$dir/vm_upstream_context"
               "$dir/vm_upstream_auto_site"; "$dir/vm_upstream_public"
+              "$dir/vm_upstream_nonce"
             done
-            echo "NATIVE_ARM64_${{ matrix.compiler }}_SEED_${seed}_UPSTREAM_PUBLIC_PASS"
+            echo "NATIVE_ARM64_${{ matrix.compiler }}_SEED_${seed}_UPSTREAM_NONCE_PASS"
           done
           # Both variants must differ on disk despite identical behavior.
           even="build-obfus/${{ matrix.compiler }}-0x12345678/smoke"
@@ -209,6 +214,8 @@ jobs:
               experiments/obfus-arm64/vm_upstream_auto_site.c -o "$dir/vm_upstream_auto_site"
             tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
               experiments/obfus-arm64/vm_upstream_public.c -o "$dir/vm_upstream_public"
+            tools/tcc-installed/bin/tcc -D"OBFH_SEED=${seed}u" \
+              experiments/obfus-arm64/vm_upstream_nonce.c -o "$dir/vm_upstream_nonce"
             readelf -h "$dir/smoke" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_bits" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_branches" | grep -q 'Machine:.*AArch64'
@@ -223,6 +230,7 @@ jobs:
             readelf -h "$dir/vm_upstream_context" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_auto_site" | grep -q 'Machine:.*AArch64'
             readelf -h "$dir/vm_upstream_public" | grep -q 'Machine:.*AArch64'
+            readelf -h "$dir/vm_upstream_nonce" | grep -q 'Machine:.*AArch64'
             python3 experiments/obfus-arm64/verify_binary.py --binary "$dir/smoke" --forbid arm64-hidden-poc
             for i in 1 2 3 4 5; do
               "$dir/smoke"; "$dir/vm_bits"; "$dir/vm_branches"
@@ -231,8 +239,9 @@ jobs:
               "$dir/vm_upstream_registers"; "$dir/vm_upstream_runtime"
               "$dir/vm_upstream_static"; "$dir/vm_upstream_context"
               "$dir/vm_upstream_auto_site"; "$dir/vm_upstream_public"
+              "$dir/vm_upstream_nonce"
             done
-            echo "NATIVE_TCC_ARM64_SEED_${seed}_UPSTREAM_PUBLIC_PASS"
+            echo "NATIVE_TCC_ARM64_SEED_${seed}_UPSTREAM_NONCE_PASS"
           done
           if cmp -s build-obfus/tcc-0x12345678/smoke build-obfus/tcc-0x12345679/smoke; then
             echo "::error::TinyCC AArch64 seed variants are identical"
@@ -491,6 +500,19 @@ jobs:
               throw "Wrong TinyCC ARM64 public VM API PE machine: $publicOutput"
             }
             $manifest["obfh_upstream_public_$($s.id).exe"] = (Get-FileHash $publicOutput -Algorithm SHA256).Hash.ToLowerInvariant()
+            # Original VM operands use two independent RND(1,2147483647)
+            # source-site counter draws, not a site-key XOR shortcut.
+            $nonceOutput = "build-arm64/obfh_upstream_nonce_$($s.id).exe"
+            & $env:TCC_ARM64 "-DOBFH_SEED=$($s.seed)u" 'experiments/obfus-arm64/vm_upstream_nonce.c' '-o' $nonceOutput
+            if ($LASTEXITCODE -ne 0) { throw "TinyCC ARM64 dual operand nonce compile failed: $($s.id)" }
+            [byte[]]$nonceBytes = [IO.File]::ReadAllBytes((Resolve-Path $nonceOutput).Path)
+            $nonceOffset = [BitConverter]::ToInt32($nonceBytes, 0x3c)
+            if ($nonceOffset -lt 64 -or $nonceOffset + 6 -ge $nonceBytes.Length -or
+                $nonceBytes[$nonceOffset] -ne 0x50 -or $nonceBytes[$nonceOffset + 1] -ne 0x45 -or
+                [BitConverter]::ToUInt16($nonceBytes, $nonceOffset + 4) -ne 0xAA64) {
+              throw "Wrong TinyCC ARM64 operand nonce PE machine: $nonceOutput"
+            }
+            $manifest["obfh_upstream_nonce_$($s.id).exe"] = (Get-FileHash $nonceOutput -Algorithm SHA256).Hash.ToLowerInvariant()
           }
           if ($manifest['obfh_even.exe'] -eq $manifest['obfh_odd.exe']) { throw 'Seed variants are identical' }
           if ($manifest['obfh_vm_even.exe'] -eq $manifest['obfh_vm_odd.exe']) { throw 'VM seed variants are identical' }
@@ -506,6 +528,7 @@ jobs:
           if ($manifest['obfh_upstream_context_even.exe'] -eq $manifest['obfh_upstream_context_odd.exe']) { throw 'Original physical context seed variants are identical' }
           if ($manifest['obfh_upstream_auto_site_even.exe'] -eq $manifest['obfh_upstream_auto_site_odd.exe']) { throw 'Automatic per-site VM seed variants are identical' }
           if ($manifest['obfh_upstream_public_even.exe'] -eq $manifest['obfh_upstream_public_odd.exe']) { throw 'Original public VM source macro seed variants are identical' }
+          if ($manifest['obfh_upstream_nonce_even.exe'] -eq $manifest['obfh_upstream_nonce_odd.exe']) { throw 'Original VM operand nonce seed variants are identical' }
           $manifest | ConvertTo-Json | Set-Content -Encoding utf8 build-arm64/manifest.json
       - uses: actions/upload-artifact@v4
         with:
@@ -536,7 +559,7 @@ jobs:
           $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
           if ($arch -ne 'Arm64' -or -not [Environment]::Is64BitProcess) { throw "Real ARM64 required: $arch" }
           $manifest = Get-Content bin/manifest.json -Raw | ConvertFrom-Json -AsHashtable
-          foreach ($name in @('obfh_even.exe','obfh_odd.exe','obfh_vm_even.exe','obfh_vm_odd.exe','obfh_vm_branch_even.exe','obfh_vm_branch_odd.exe','obfh_vm_program_even.exe','obfh_vm_program_odd.exe','obfh_vm_flow_even.exe','obfh_vm_flow_odd.exe','obfh_upstream_codec_even.exe','obfh_upstream_codec_odd.exe','obfh_upstream_exec_even.exe','obfh_upstream_exec_odd.exe','obfh_upstream_value_even.exe','obfh_upstream_value_odd.exe','obfh_upstream_registers_even.exe','obfh_upstream_registers_odd.exe','obfh_upstream_runtime_even.exe','obfh_upstream_runtime_odd.exe','obfh_upstream_static_even.exe','obfh_upstream_static_odd.exe','obfh_upstream_context_even.exe','obfh_upstream_context_odd.exe','obfh_upstream_auto_site_even.exe','obfh_upstream_auto_site_odd.exe','obfh_upstream_public_even.exe','obfh_upstream_public_odd.exe')) {
+          foreach ($name in @('obfh_even.exe','obfh_odd.exe','obfh_vm_even.exe','obfh_vm_odd.exe','obfh_vm_branch_even.exe','obfh_vm_branch_odd.exe','obfh_vm_program_even.exe','obfh_vm_program_odd.exe','obfh_vm_flow_even.exe','obfh_vm_flow_odd.exe','obfh_upstream_codec_even.exe','obfh_upstream_codec_odd.exe','obfh_upstream_exec_even.exe','obfh_upstream_exec_odd.exe','obfh_upstream_value_even.exe','obfh_upstream_value_odd.exe','obfh_upstream_registers_even.exe','obfh_upstream_registers_odd.exe','obfh_upstream_runtime_even.exe','obfh_upstream_runtime_odd.exe','obfh_upstream_static_even.exe','obfh_upstream_static_odd.exe','obfh_upstream_context_even.exe','obfh_upstream_context_odd.exe','obfh_upstream_auto_site_even.exe','obfh_upstream_auto_site_odd.exe','obfh_upstream_public_even.exe','obfh_upstream_public_odd.exe','obfh_upstream_nonce_even.exe','obfh_upstream_nonce_odd.exe')) {
             $path = (Resolve-Path (Join-Path bin $name)).Path
             [byte[]]$bytes = [IO.File]::ReadAllBytes($path)
             $offset = [BitConverter]::ToInt32($bytes, 0x3c)

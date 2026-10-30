@@ -28,6 +28,33 @@
     ((V)==0u ? 4u : (V)==1u ? 6u : (V)==2u ? 11u : (V)==3u ? 10u : \
      (V)==4u ? 12u : (V)==5u ? 11u : (V)==6u ? 8u : 15u)
 
+/* Exact upstream RND(1,2147483647u), with 32-bit unsigned wrap before
+ * modulo. This is compile-time entropy from __COUNTER__ + __LINE__ + seed,
+ * NOT a runtime RNG. Two operand expansions consume TWO counters after the
+ * four site/junk counters. The original RND domain includes 1..2147483647.
+ */
+#define OBFH_AS_RND31(COUNT,LINE,SEED) \
+    (UINT32_C(1) + ((((uint32_t)(COUNT) + (uint32_t)(LINE) + \
+                       (uint32_t)(SEED)) * UINT32_C(2654435761)) % \
+                     UINT32_C(2147483647)))
+#define OBFH_AS_DECLARE_NONCES(NAME) \
+    enum { \
+        NAME##_operand_counter_a=__COUNTER__, \
+        NAME##_operand_counter_b=__COUNTER__, \
+        NAME##_nonce_a=OBFH_AS_RND31(NAME##_operand_counter_a, \
+                                      NAME##_line,OBFH_SEED), \
+        NAME##_nonce_b=OBFH_AS_RND31(NAME##_operand_counter_b, \
+                                      NAME##_line,OBFH_SEED) \
+    }; \
+    _Static_assert(NAME##_operand_counter_a==NAME##_draw2+1u && \
+                   NAME##_operand_counter_b==NAME##_operand_counter_a+1u, \
+                   "Original obfus.h operand counters are not consecutive"); \
+    _Static_assert(NAME##_nonce_a>=1u && \
+                   (uint32_t)NAME##_nonce_a<=UINT32_C(2147483647) && \
+                   NAME##_nonce_b>=1u && \
+                   (uint32_t)NAME##_nonce_b<=UINT32_C(2147483647), \
+                   "Original obfus.h operand nonce domain violated")
+
 /* Capture all original draws once, in-order. The encoded key is invariant
  * with respect to runtime arguments and references only compile-time enums.
  */

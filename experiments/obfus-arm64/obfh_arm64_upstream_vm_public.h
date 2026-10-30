@@ -5,7 +5,7 @@
  * No plaintext C operation fallback. On execution rejection, abort().
  *
  * NOT a production drop-in obfus.h: original CRT/anti-debug/stack/keyword
- * interception, caller random nonces, PE ABI/unwind, and exact-length
+ * interception, caller salt profiles, PE ABI/unwind, and exact-length
  * auto-site storage remain separate qualification gates.
  */
 #ifndef QIGAO_OBFH_ARM64_UPSTREAM_VM_PUBLIC_H
@@ -38,12 +38,12 @@ enum {
  */
 #define OBFH_ARM64_VM_EXEC(OP,LEFT,RIGHT,FLOATING) ({ \
     OBFH_AS_DECLARE(__obfh_public_site,(OP)); \
+    OBFH_AS_DECLARE_NONCES(__obfh_public_site); \
     long double __obfh_public_result=0.0L; \
     uint32_t __obfh_public_steps=0u; \
     enum obfh_uprt_status __obfh_public_status= \
-        OBFH_SC_CALL(__obfh_public_site,(LEFT),(RIGHT),(FLOATING), \
-            ((uint32_t)__obfh_public_site_site ^ \
-             (uint32_t)__obfh_public_site_key) & UINT32_C(0x7fffffff), \
+        OBFH_SC_CALL_NONCES(__obfh_public_site,(LEFT),(RIGHT),(FLOATING), \
+            __obfh_public_site_nonce_a,__obfh_public_site_nonce_b, \
             &__obfh_public_result,&__obfh_public_steps, \
             (obfh_uprt_trace *)0); \
     if (__obfh_public_status!=OBFH_UPRT_OK || \
