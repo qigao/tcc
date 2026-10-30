@@ -17,15 +17,36 @@ jobs:
       fail-fast: false
       matrix:
         compiler: [gcc, clang]
+    env:
+      CCACHE_DIR: ${{ runner.temp }}/tcc-obfus-arm64/${{ matrix.compiler }}
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_COMPRESS: "true"
+      CCACHE_MAXSIZE: 250M
     steps:
       - uses: actions/checkout@v4
+      - name: Install ccache on Linux ARM64 runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ccache
+          command -v ccache
+          ccache --version
+      - name: Restore ARM64 compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/tcc-obfus-arm64/${{ matrix.compiler }}
+          key: tcc-obfus-arm64-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.compiler }}-${{ github.sha }}
+          restore-keys: |
+            tcc-obfus-arm64-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.compiler }}-
       - name: Native ARM64 seed and behavior qualification
         shell: bash
         run: |
           set -euo pipefail
           test "$(uname -m)" = aarch64
           mkdir -p build-obfus
-          ccache --version
+          ccache --zero-stats
           for seed in 0x12345678 0x12345679; do
             dir="build-obfus/${{ matrix.compiler }}-$seed"
             mkdir -p "$dir"
