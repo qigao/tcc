@@ -590,8 +590,27 @@ jobs:
             $digest = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($digest -ne $manifest[$name]) { throw "Artifact digest mismatch: $name" }
             for ($i = 0; $i -lt 10; ++$i) {
-              & $path
-              if ($LASTEXITCODE -ne 0) { throw "ARM64 native runtime fail $name iteration $i exit $LASTEXITCODE" }
+              if ($name -match '^obfh_upstream_static_(even|odd)\.exe
+          }
+) {
+                # Require a live image-base delta, actual DIR64 relocation
+                # application and loader-registered .pdata function entry.
+                # A file header or merely running the EXE is NOT sufficient.
+                $nativeOutput = @(& $path)
+                if ($LASTEXITCODE -ne 0) {
+                  throw "ARM64 native loader/ABI fail $name iteration $i exit $LASTEXITCODE"
+                }
+                $receipt = @($nativeOutput | Where-Object {
+                  $_ -match '^ARM64_NATIVE_LOADER_RELOC_PDATA_PASS: '
+                })
+                if ($receipt.Count -ne 1) {
+                  throw "No independent loader relocation and .pdata runtime receipt: $name run $i"
+                }
+                Write-Host $receipt[0]
+              } else {
+                & $path
+                if ($LASTEXITCODE -ne 0) { throw "ARM64 native runtime fail $name iteration $i exit $LASTEXITCODE" }
+              }
             }
             Write-Host "ARM64_TCC_NATIVE_PASS: $name (10 runs)"
           }

@@ -76,6 +76,8 @@ Initial toolchain: TinyCC `mob` commit `e23dabed154a8495f3ac1ff3cc9d04fa1c207893
 
 - **Real PE binary memory-permission and relocation audit**: `verify_pe_vm_sections.py` parses actual ARM64 PE section flags and base relocation entries and independently encodes three known original VM static sites to locate their full bytes in read-only, non-executable PE sections. It fails on missing/writable/ambiguous arrays, W+X sections or relocation overlap; no pefile/SDK/second CI job. **ASLR/unwind/CFG validation remains separately open**.
 
+- Live Windows ARM64 loader proof candidate: the existing `vm_upstream_static.c` opens its actual running PE to compare on-disk DIR64 relocation words with their relocated in-memory values under the real nonpreferred image base; `VirtualQuery` requires original packed VM bytecode pages to be `PAGE_READONLY`, and `RtlLookupFunctionEntry` must return a matching `.pdata` entry for a nonleaf VM test function. `windows-arm64-native` requires explicit success receipts **10 times per seed**. **Real exception propagation/unwinding and CFG are NOT implied** by these lower-level checks; keep Release blocked.
+
 ## Admission after this POC
 
 1. **W1:** Define portable core vs ISA-specific lowers in a **separate experimental port**; binary-diff and regression test unchanged original x86/x64 headers before any upstream patch.

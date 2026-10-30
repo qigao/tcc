@@ -8,6 +8,11 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN 1
+#include <windows.h>
+#include <stdlib.h>
+#endif
 #include "obfh_arm64_upstream_program_reference.h"
 #include "obfh_arm64_upstream_static.h"
 
@@ -143,8 +148,185 @@ static int fail_closed(void) {
         steps!=UINT32_C(0xdecafbad)) return 41;
     return 0;
 }
+/* Real Windows ARM64 loader/PE test, inside the SAME existing native
+ * executable. This does not add a consumer, runner job, or fallback engine.
+ * Separate gates remain for actual SEH propagation and CFG enforcement.
+ */
+#if defined(_WIN32)
+static int disk_rva_offset(const unsigned char *file,size_t length,
+                           const IMAGE_NT_HEADERS64 *nt,
+                           DWORD rva, DWORD need, size_t *offset) {
+    const IMAGE_SECTION_HEADER *sections=IMAGE_FIRST_SECTION(nt);
+    unsigned int i;
+    for(i=0u;i<nt->FileHeader.NumberOfSections;++i) {
+        const IMAGE_SECTION_HEADER *sec=&sections[i];
+        unsigned long long rel;
+        if(rva<sec->VirtualAddress) continue;
+        rel=(unsigned long long)rva-sec->VirtualAddress;
+        if(rel+need>sec->SizeOfRawData) continue;
+        if((unsigned long long)sec->PointerToRawData+rel+need>length)
+            return 0;
+        *offset=(size_t)sec->PointerToRawData+(size_t)rel;
+        return 1;
+    }
+    (void)file;
+    return 0;
+}
+static int windows_loader_relocation_and_function_table(void) {
+    HMODULE module=GetModuleHandleA((const char *)0);
+    unsigned char *image=(unsigned char *)(void *)module;
+    const IMAGE_DOS_HEADER *dos;
+    const IMAGE_NT_HEADERS64 *nt;
+    const IMAGE_DATA_DIRECTORY *reloc;
+    FILE *stream;
+    unsigned char *disk=(unsigned char *)0;
+    long disk_size;
+    char path[4096];
+    DWORD directory_at=0u, validated=0u, scanned=0u;
+    unsigned long long preferred,actual,delta;
+    MEMORY_BASIC_INFORMATION memory;
+    unsigned long long lookup_base=0u;
+    typedef void *(WINAPI *obfh_lookup_fn)(
+        unsigned long long,unsigned long long *,void *);
+    obfh_lookup_fn lookup;
+    void *runtime_entry;
+    HMODULE kernel;
+    size_t checked=0u;
+    int status=0;
+    if(!module || !image) return 51;
+    dos=(const IMAGE_DOS_HEADER *)(const void *)image;
+    if(dos->e_magic!=IMAGE_DOS_SIGNATURE ||
+       dos->e_lfanew<64 || dos->e_lfanew>0x1000) return 52;
+    nt=(const IMAGE_NT_HEADERS64 *)(const void *)(image+dos->e_lfanew);
+    if(nt->Signature!=IMAGE_NT_SIGNATURE ||
+       nt->FileHeader.Machine!=IMAGE_FILE_MACHINE_ARM64 ||
+       nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
+       !(nt->OptionalHeader.DllCharacteristics&IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) ||
+       !(nt->OptionalHeader.DllCharacteristics&IMAGE_DLLCHARACTERISTICS_NX_COMPAT))
+        return 53;
+    actual=(unsigned long long)(uintptr_t)(void *)module;
+    preferred=(unsigned long long)nt->OptionalHeader.ImageBase;
+    delta=actual-preferred;
+    /* A nonpreferred loader base is a REQUIRED admission, not assumed
+     * from the PE DYNAMIC_BASE flag. Repeat native test ten times.
+     */
+    if(actual==preferred) {
+        fprintf(stderr,"ARM64_LOADER_RED: image at preferred base %llx\n",preferred);
+        return 54;
+    }
+    if(VirtualQuery((const void *)site0_words,&memory,sizeof memory)!=
+                          sizeof memory ||
+       memory.State!=MEM_COMMIT ||
+       (memory.Protect & 0xffu)!=PAGE_READONLY) return 55;
+    if(VirtualQuery((const void *)site7_words,&memory,sizeof memory)!=
+                          sizeof memory ||
+       memory.State!=MEM_COMMIT ||
+       (memory.Protect & 0xffu)!=PAGE_READONLY) return 56;
+
+    if(!GetModuleFileNameA((HMODULE)0,path,(DWORD)sizeof path) ||
+       strlen(path)>=sizeof path-1u) return 57;
+    stream=fopen(path,"rb");
+    if(!stream) return 58;
+    if(fseek(stream,0,SEEK_END)!=0) { fclose(stream);return 59; }
+    disk_size=ftell(stream);
+    if(disk_size<1024 || disk_size>16*1024*1024) {
+        fclose(stream);return 60;
+    }
+    if(fseek(stream,0,SEEK_SET)!=0) { fclose(stream);return 61; }
+    disk=(unsigned char *)malloc((size_t)disk_size);
+    if(!disk) { fclose(stream);return 62; }
+    checked=fread(disk,1u,(size_t)disk_size,stream);
+    fclose(stream);
+    if(checked!=(size_t)disk_size) { status=63;goto cleanup; }
+
+    reloc=&nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+    if(!reloc->VirtualAddress || !reloc->Size ||
+       reloc->VirtualAddress>=nt->OptionalHeader.SizeOfImage ||
+       reloc->Size>nt->OptionalHeader.SizeOfImage-reloc->VirtualAddress)
+        { status=64;goto cleanup; }
+    while(directory_at<reloc->Size) {
+        const IMAGE_BASE_RELOCATION *block;
+        unsigned int i,items;
+        DWORD at=reloc->VirtualAddress+directory_at;
+        if(reloc->Size-directory_at<8u) { status=65;goto cleanup; }
+        block=(const IMAGE_BASE_RELOCATION *)(const void *)(image+at);
+        if(block->SizeOfBlock<8u || block->SizeOfBlock%2u!=0u ||
+           block->SizeOfBlock>reloc->Size-directory_at)
+            { status=66;goto cleanup; }
+        items=(block->SizeOfBlock-8u)/2u;
+        for(i=0u;i<items;++i) {
+            const WORD *records=(const WORD *)(const void *)(block+1);
+            WORD record=records[i];
+            unsigned int type=record>>12u;
+            DWORD slot_rva;
+            size_t file_at;
+            unsigned long long original,relocated;
+            if(!type) continue;
+            ++scanned;
+            if(type!=IMAGE_REL_BASED_DIR64) {
+                fprintf(stderr,"ARM64_LOADER_RED: unexpected reloc type %u\n",type);
+                status=67;goto cleanup;
+            }
+            slot_rva=block->VirtualAddress+(record&0xfffu);
+            if(slot_rva>nt->OptionalHeader.SizeOfImage ||
+               nt->OptionalHeader.SizeOfImage-slot_rva<8u ||
+               !disk_rva_offset(disk,(size_t)disk_size,nt,slot_rva,8u,&file_at))
+                { status=68;goto cleanup; }
+            memcpy(&original,disk+file_at,sizeof original);
+            memcpy(&relocated,image+slot_rva,sizeof relocated);
+            if(relocated!=original+delta) {
+                fprintf(stderr,
+                        "ARM64_LOADER_RED: relocation RVA=%08x orig=%llx live=%llx delta=%llx\n",
+                        slot_rva,original,relocated,delta);
+                status=69;goto cleanup;
+            }
+            ++validated;
+        }
+        directory_at+=block->SizeOfBlock;
+    }
+    if(!validated || validated!=scanned) { status=70;goto cleanup; }
+
+    /* Windows loader must register a concrete .pdata RUNTIME_FUNCTION for
+     * a true nonleaf VM validation function; merely having a .pdata section
+     * would not establish loader-visible unwind-table admission. */
+    kernel=GetModuleHandleA("kernel32.dll");
+    if(!kernel) { status=71;goto cleanup; }
+    lookup=(obfh_lookup_fn)(void *)GetProcAddress(kernel,"RtlLookupFunctionEntry");
+    if(!lookup) { status=72;goto cleanup; }
+    runtime_entry=lookup((unsigned long long)(uintptr_t)(void *)&static_equivalence,
+                         &lookup_base,(void *)0);
+    if(!runtime_entry || lookup_base!=actual) { status=73;goto cleanup; }
+    {
+        const IMAGE_DATA_DIRECTORY *pdata=&nt->OptionalHeader.DataDirectory[
+                IMAGE_DIRECTORY_ENTRY_EXCEPTION];
+        uintptr_t at=(uintptr_t)runtime_entry;
+        uintptr_t first=(uintptr_t)(void *)module+pdata->VirtualAddress;
+        if(!pdata->VirtualAddress || pdata->Size<8u ||
+           at<first || at-first+8u>pdata->Size)
+            { status=74;goto cleanup; }
+    }
+    printf("ARM64_NATIVE_LOADER_RELOC_PDATA_PASS: loaded=%llx preferred=%llx delta=%llx "
+           "DIR64=%u .pdata_lookup=1 guard_cf_advertised=%u\n",
+           actual,preferred,delta,validated,
+           !!(nt->OptionalHeader.DllCharacteristics&
+              IMAGE_DLLCHARACTERISTICS_GUARD_CF));
+cleanup:
+    free(disk);
+    if(status)
+        fprintf(stderr,"ARM64_NATIVE_LOADER_RELOC_PDATA_RED: reason=%d loaded=%llx preferred=%llx checked=%u\n",
+                status,actual,preferred,validated);
+    return status;
+}
+#endif
+
 int main(void) {
-    int rc=static_equivalence();
+#if defined(_WIN32)
+    int rc=windows_loader_relocation_and_function_table();
+    if(rc) return rc;
+#else
+    int rc;
+#endif
+    rc=static_equivalence();
     if (rc) return rc;
     rc=single_eval();
     if (rc) return rc;
