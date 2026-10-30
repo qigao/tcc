@@ -623,5 +623,22 @@ jobs:
                 if ($LASTEXITCODE -ne 0) { throw "ARM64 native runtime fail $name iteration $i exit $LASTEXITCODE" }
               }
             }
+            if ($name -eq 'obfh_upstream_static_even.exe' -or $name -eq 'obfh_upstream_static_odd.exe') {
+              # A separate native child-process invocation: RtlUnwindEx
+              # actually resumes a specified outer TinyCC frame, unlike
+              # the per-run RtlVirtualUnwind copy-only admission above.
+              # This is manual phase-two unwind, NOT __finally support.
+              $phase2Output = @(& $path '--phase2-unwind')
+              if ($LASTEXITCODE -ne 0) {
+                throw "ARM64 destructive unwind RED for $name (exit $LASTEXITCODE)"
+              }
+              $receipt = @($phase2Output | Where-Object {
+                $_.StartsWith('ARM64_NATIVE_DESTRUCTIVE_UNWIND_PASS: ')
+              })
+              if ($receipt.Count -ne 1) {
+                throw "Missing or duplicate destructive-unwind native receipt for $name"
+              }
+              Write-Host $receipt[0]
+            }
             Write-Host "ARM64_TCC_NATIVE_PASS: $name (10 runs)"
           }
